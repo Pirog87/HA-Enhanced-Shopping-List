@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.3.0
+ * Enhanced Shopping List Card v2.3.1
  * Works with any todo.* entity (native HA shopping list)
  * Notes encoded in summary: "Name (qty) // note"
  */
@@ -325,6 +325,9 @@ class EnhancedShoppingListCard extends HTMLElement {
             <div class="item-name" data-action="edit-name">${esc(item.name)}</div>
             ${notePreview}
           </div>
+          <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/></svg>
+          </button>
           <div class="qty-area">
             <button class="qty-btn" data-action="qty-minus">
               <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
@@ -334,9 +337,6 @@ class EnhancedShoppingListCard extends HTMLElement {
               <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
             </button>
           </div>
-          <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
-            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/></svg>
-          </button>
         </div>
       </div>
       <div class="note-editor" style="display:none">
@@ -578,8 +578,6 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- item --- */
       .item-wrap { border-radius: var(--R); margin-bottom: 2px; overflow: hidden; }
-      .active-list .item-wrap { background: rgba(var(--esl-active-rgb), 0.08); }
-      .completed-list .item-wrap { background: rgba(var(--esl-done-rgb), 0.08); }
       .swipe-row { position: relative; overflow: hidden; border-radius: var(--R); }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
@@ -592,8 +590,18 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: transparent; min-height: 44px;
         z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: default;
       }
-      .active-list .item { background: rgba(var(--esl-active-rgb), 0.08); }
-      .completed-list .item { background: rgba(var(--esl-done-rgb), 0.08); }
+      .active-list .item {
+        background: linear-gradient(
+          rgba(var(--esl-active-rgb), 0.15),
+          rgba(var(--esl-active-rgb), 0.15)
+        ), var(--card-background-color, #1c1c1c);
+      }
+      .completed-list .item {
+        background: linear-gradient(
+          rgba(var(--esl-done-rgb), 0.15),
+          rgba(var(--esl-done-rgb), 0.15)
+        ), var(--card-background-color, #1c1c1c);
+      }
 
       /* --- checkbox --- */
       .chk {
@@ -628,7 +636,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .completed-item { opacity: .7; }
 
       /* --- quantity --- */
-      .qty-area { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+      .qty-area { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
       .qty-btn {
         width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer;
         display: flex; align-items: center; justify-content: center; padding: 0;
@@ -761,13 +769,22 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           background: var(--card-background-color,#fff); color: var(--primary-text-color);
           font-family: inherit; font-size: 14px;
         }
-        .color-row { display: flex; align-items: center; gap: 10px; }
+        .color-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
         .color-row input[type="color"] {
-          width: 40px; height: 40px; border: 1.5px solid var(--divider-color,#ddd);
-          border-radius: 8px; padding: 2px; cursor: pointer; background: none;
+          -webkit-appearance: none; -moz-appearance: none; appearance: none;
+          width: 48px; height: 48px; min-width: 48px; min-height: 48px;
+          border: 2px solid var(--divider-color,#ddd); border-radius: 10px;
+          padding: 3px; cursor: pointer; background: none;
         }
+        .color-row input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+        .color-row input[type="color"]::-webkit-color-swatch { border-radius: 6px; border: none; }
+        .color-row input[type="color"]::-moz-color-swatch { border-radius: 6px; border: none; }
         .color-preview {
-          flex: 1; height: 32px; border-radius: 8px; opacity: .35;
+          flex: 1; height: 36px; border-radius: 10px; opacity: .4;
+        }
+        .color-hex {
+          font-size: 13px; font-family: monospace; color: var(--secondary-text-color);
+          min-width: 64px;
         }
       </style>
       <div class="esl-ed">
@@ -787,17 +804,19 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           </select>
         </div>
         <div class="row">
-          <label>Kolor: Do kupienia</label>
+          <label>Kolor tla: Do kupienia</label>
           <div class="color-row">
             <input type="color" id="esl-color-active" value="${this._config.color_active || "#2196f3"}" />
             <div class="color-preview" id="esl-preview-active" style="background:${this._config.color_active || "#2196f3"}"></div>
+            <span class="color-hex" id="esl-hex-active">${this._config.color_active || "#2196f3"}</span>
           </div>
         </div>
         <div class="row">
-          <label>Kolor: Kupione</label>
+          <label>Kolor tla: Kupione</label>
           <div class="color-row">
             <input type="color" id="esl-color-done" value="${this._config.color_completed || "#4caf50"}" />
             <div class="color-preview" id="esl-preview-done" style="background:${this._config.color_completed || "#4caf50"}"></div>
+            <span class="color-hex" id="esl-hex-done">${this._config.color_completed || "#4caf50"}</span>
           </div>
         </div>
       </div>`;
@@ -808,10 +827,12 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     this.querySelector("#esl-color-active").addEventListener("input", e => {
       this._config = { ...this._config, color_active: e.target.value }; this._fire();
       this.querySelector("#esl-preview-active").style.background = e.target.value;
+      this.querySelector("#esl-hex-active").textContent = e.target.value;
     });
     this.querySelector("#esl-color-done").addEventListener("input", e => {
       this._config = { ...this._config, color_completed: e.target.value }; this._fire();
       this.querySelector("#esl-preview-done").style.background = e.target.value;
+      this.querySelector("#esl-hex-done").textContent = e.target.value;
     });
   }
 
@@ -833,7 +854,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.3.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.3.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
