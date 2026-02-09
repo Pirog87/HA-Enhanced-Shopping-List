@@ -151,14 +151,17 @@ async def _async_register_lovelace_resource(
         _LOGGER.debug("Lovelace not available — skipping resource registration")
         return
 
-    if lovelace.mode != "storage":
+    # Get resources — handle both attribute and dict-style access
+    # (LovelaceData structure varies across HA versions)
+    if hasattr(lovelace, "resources"):
+        resources = lovelace.resources
+    elif isinstance(lovelace, dict) and "resources" in lovelace:
+        resources = lovelace["resources"]
+    else:
         _LOGGER.debug(
-            "Lovelace is in %s mode — resource auto-registration skipped",
-            lovelace.mode,
+            "Lovelace resources not accessible — skipping resource registration"
         )
         return
-
-    resources = lovelace.resources
 
     if not resources.loaded:
         if _retries < 5:
