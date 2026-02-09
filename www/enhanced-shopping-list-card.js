@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.4.0
+ * Enhanced Shopping List Card v2.4.1
  * Works with any todo.* entity (native HA shopping list)
  * Notes encoded in summary: "Name (qty) // note"
  */
@@ -394,6 +394,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       // Pointer-based swipe (works on both touch and mouse)
       const itemEl = el.querySelector(".item");
+      const swipeRow = el.querySelector(".swipe-row");
       let ts = null, off = 0;
 
       itemEl.addEventListener("pointerdown", e => {
@@ -401,6 +402,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
         off = 0;
         container.querySelectorAll(".item").forEach(o => { if (o !== itemEl) o.style.transform = ""; });
+        container.querySelectorAll(".swipe-row").forEach(r => { if (r !== swipeRow) r.classList.remove("swiping"); });
       });
 
       itemEl.addEventListener("pointermove", e => {
@@ -411,6 +413,7 @@ class EnhancedShoppingListCard extends HTMLElement {
             ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
             if (ts.dir === "h") {
               try { itemEl.setPointerCapture(e.pointerId); } catch(_) {}
+              swipeRow.classList.add("swiping");
             } else { ts = null; return; }
           } else return;
         }
@@ -424,14 +427,23 @@ class EnhancedShoppingListCard extends HTMLElement {
       const endSwipe = () => {
         if (!ts) return;
         itemEl.style.transition = "transform 0.25s ease";
-        if (off > 80 && !isCompleted) { itemEl.style.transform = ""; this._toggleComplete(item); }
-        else if (off < -80) { itemEl.style.transform = "translateX(-80px)"; }
-        else { itemEl.style.transform = ""; }
+        if (off > 80 && !isCompleted) {
+          itemEl.style.transform = ""; swipeRow.classList.remove("swiping"); this._toggleComplete(item);
+        } else if (off < -80) {
+          itemEl.style.transform = "translateX(-80px)";
+        } else {
+          itemEl.style.transform = "";
+          setTimeout(() => swipeRow.classList.remove("swiping"), 250);
+        }
         ts = null;
       };
       itemEl.addEventListener("pointerup", endSwipe);
       itemEl.addEventListener("pointercancel", () => {
-        if (ts) { itemEl.style.transition = "transform 0.25s ease"; itemEl.style.transform = ""; ts = null; }
+        if (ts) {
+          itemEl.style.transition = "transform 0.25s ease"; itemEl.style.transform = "";
+          setTimeout(() => swipeRow.classList.remove("swiping"), 250);
+          ts = null;
+        }
       });
     });
   }
@@ -586,26 +598,22 @@ class EnhancedShoppingListCard extends HTMLElement {
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
         display: flex; align-items: center;
+        opacity: 0; transition: opacity .15s;
       }
+      .swipe-row.swiping .sw-bg { opacity: 1; }
       .sw-right { left: 0; background: #43a047; padding-left: 18px; }
       .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; }
       .item {
         position: relative; display: flex; align-items: center; gap: 12px;
-        padding: 10px 14px; min-height: 50px;
-        background: transparent;
+        padding: 4px 14px; min-height: 58px;
+        border-radius: var(--R);
         z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: pointer;
       }
       .active-list .item {
-        background: linear-gradient(
-          rgba(var(--esl-active-rgb), 0.20),
-          rgba(var(--esl-active-rgb), 0.20)
-        ), var(--card-background-color, #1c1c1c);
+        background-color: rgba(var(--esl-active-rgb), 0.20);
       }
       .completed-list .item {
-        background: linear-gradient(
-          rgba(var(--esl-done-rgb), 0.20),
-          rgba(var(--esl-done-rgb), 0.20)
-        ), var(--card-background-color, #1c1c1c);
+        background-color: rgba(var(--esl-done-rgb), 0.20);
       }
 
       /* --- checkbox --- */
@@ -862,7 +870,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.4.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.4.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
