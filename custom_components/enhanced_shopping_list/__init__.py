@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
-from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
@@ -103,63 +103,56 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 #  Auto-register Lovelace card JS file
 # ------------------------------------------------------------------
 
-CARD_URL_PATH = "/enhanced_shopping_list/card"
 CARD_FILENAME = "enhanced-shopping-list-card.js"
+LOVELACE_URL = f"/local/{CARD_FILENAME}"
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
-    """Serve the card JS from the component directory and register as Lovelace resource."""
-    # Serve JS directly from custom_components/enhanced_shopping_list/
-    card_dir = Path(__file__).parent
-    card_file = card_dir / CARD_FILENAME
+    """Copy card JS to config/www/ and register as Lovelace resource."""
+    source = Path(__file__).parent / CARD_FILENAME
+    www_dir = Path(hass.config.path("www"))
+    dest = www_dir / CARD_FILENAME
 
-    if not card_file.is_file():
-        _LOGGER.error(
-            "Card JS file not found at %s — card will not work", card_file
-        )
-        return
+    # Ensure config/www/ exists
+    www_dir.mkdir(parents=True, exist_ok=True)
 
+    # Copy JS (overwrite on every setup to keep it up-to-date)
     try:
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_URL_PATH, str(card_dir), cache_headers=True)]
-        )
+        shutil.copy2(str(source), str(dest))
+        _LOGGER.info("Card JS copied to %s", dest)
     except Exception:  # noqa: BLE001
-        _LOGGER.warning("Could not register static path for card JS")
+        _LOGGER.error(
+            "Failed to copy card JS from %s to %s", source, dest
+        )
         return
 
-    url = f"{CARD_URL_PATH}/{CARD_FILENAME}"
-
-    # Register as a Lovelace resource automatically
-    # Try immediately first (works if HA is already fully started / reload)
-    if not _try_add_resource(hass, url):
-        # If not ready yet, wait for HA start event
+    # Register as Lovelace resource
+    if not _try_add_resource(hass, LOVELACE_URL):
         hass.bus.async_listen_once(
             "homeassistant_started",
-            lambda _: _try_add_resource(hass, url),
+            lambda _: _try_add_resource(hass, LOVELACE_URL),
         )
 
 
 @callback
 def _try_add_resource(hass: HomeAssistant, url: str) -> bool:
-    """Try to add the JS resource to Lovelace. Returns True if handled."""
+    """Add JS resource to Lovelace if not already registered."""
     try:
         resources = hass.data.get("lovelace_resources")
         if resources is None:
             _LOGGER.debug(
-                "Lovelace resources not available yet (YAML mode?). "
-                "Add the resource manually: %s",
+                "Lovelace resources not available (YAML mode?). "
+                "Add manually: %s",
                 url,
             )
             return False
 
-        # Check if already registered
         for item in resources.async_items():
-            stored_url = item.get("url", "").split("?")[0]
-            if stored_url == url or stored_url.endswith(CARD_FILENAME):
-                _LOGGER.debug("Lovelace resource already registered: %s", url)
+            stored = item.get("url", "").split("?")[0]
+            if stored == url or CARD_FILENAME in stored:
+                _LOGGER.debug("Lovelace resource already registered")
                 return True
 
-        # Add the resource
         hass.async_create_task(
             resources.async_create_item({"res_type": "module", "url": url})
         )
@@ -167,9 +160,7 @@ def _try_add_resource(hass: HomeAssistant, url: str) -> bool:
         return True
     except Exception:  # noqa: BLE001
         _LOGGER.warning(
-            "Could not auto-register Lovelace resource. "
-            "Add manually: Resources > %s (JavaScript Module)",
-            url,
+            "Could not auto-register resource. Add manually: %s", url
         )
         return False
 
