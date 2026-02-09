@@ -94,67 +94,75 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 #  Auto-register Lovelace card JS file
 # ------------------------------------------------------------------
 
+CARD_URL_PATH = "/enhanced_shopping_list/card"
+CARD_FILENAME = "enhanced-shopping-list-card.js"
+
+
 async def _async_register_card(hass: HomeAssistant) -> None:
-    """Serve the card JS and register it as a Lovelace resource."""
-    # Serve the JS file from custom_components dir as a fallback,
-    # but prefer the www/ copy that HACS places there.
-    # We register the /local/ URL which maps to config/www/
-    url = "/local/enhanced-shopping-list-card.js"
+    """Serve the card JS from the component directory and register as Lovelace resource."""
+    # Serve JS directly from custom_components/enhanced_shopping_list/
+    card_dir = Path(__file__).parent
+    card_file = card_dir / CARD_FILENAME
 
-    # Also serve from the component directory for non-HACS installs
-    card_path = Path(__file__).parent / "card"
-    if card_path.is_dir():
-        try:
-            await hass.http.async_register_static_paths(
-                [StaticPathConfig("/enhanced-shopping-list", str(card_path), True)]
-            )
-            url = "/enhanced-shopping-list/enhanced-shopping-list-card.js"
-        except Exception:  # noqa: BLE001
-            pass  # Fallback to /local/ path
+    if not card_file.is_file():
+        _LOGGER.error(
+            "Card JS file not found at %s — card will not work", card_file
+        )
+        return
 
-    # Register as a Lovelace resource so user doesn't have to
-    _register_lovelace_resource(hass, url)
+    try:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(CARD_URL_PATH, str(card_dir), cache_headers=True)]
+        )
+    except Exception:  # noqa: BLE001
+        _LOGGER.warning("Could not register static path for card JS")
+        return
 
+    url = f"{CARD_URL_PATH}/{CARD_FILENAME}"
 
-def _register_lovelace_resource(hass: HomeAssistant, url: str) -> None:
-    """Register the JS file as a Lovelace resource if not already registered."""
-    # We use the lovelace resources collection if available (storage mode)
-    hass.bus.async_listen_once(
-        "homeassistant_started",
-        lambda _: _try_add_resource(hass, url),
-    )
+    # Register as a Lovelace resource automatically
+    # Try immediately first (works if HA is already fully started / reload)
+    if not _try_add_resource(hass, url):
+        # If not ready yet, wait for HA start event
+        hass.bus.async_listen_once(
+            "homeassistant_started",
+            lambda _: _try_add_resource(hass, url),
+        )
 
 
 @callback
-def _try_add_resource(hass: HomeAssistant, url: str) -> None:
-    """Try to add the JS resource to Lovelace after HA fully starts."""
+def _try_add_resource(hass: HomeAssistant, url: str) -> bool:
+    """Try to add the JS resource to Lovelace. Returns True if handled."""
     try:
         resources = hass.data.get("lovelace_resources")
         if resources is None:
             _LOGGER.debug(
-                "Lovelace resources not available (YAML mode?). "
+                "Lovelace resources not available yet (YAML mode?). "
                 "Add the resource manually: %s",
                 url,
             )
-            return
+            return False
 
         # Check if already registered
         for item in resources.async_items():
-            if item.get("url", "").split("?")[0] == url.split("?")[0]:
+            stored_url = item.get("url", "").split("?")[0]
+            if stored_url == url or stored_url.endswith(CARD_FILENAME):
                 _LOGGER.debug("Lovelace resource already registered: %s", url)
-                return
+                return True
 
         # Add the resource
         hass.async_create_task(
             resources.async_create_item({"res_type": "module", "url": url})
         )
         _LOGGER.info("Auto-registered Lovelace resource: %s", url)
+        return True
     except Exception:  # noqa: BLE001
         _LOGGER.warning(
             "Could not auto-register Lovelace resource. "
             "Add manually: Resources > %s (JavaScript Module)",
             url,
         )
+        return False
 
 
 # ------------------------------------------------------------------
