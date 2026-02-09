@@ -54,6 +54,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._completedExpanded = false;
     this._showConfirmClear = false;
     this._debounceTimer = null;
+    this._qtyTimers = {};
     this._hass = null;
     this._rendered = false;
   }
@@ -134,34 +135,83 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   async _addItem(name, qty = 1) {
     await this._callService("add_item", { item: formatSummary(name, qty) });
+    await this._fetchItems();
   }
 
   async _toggleComplete(item) {
     const newStatus = item.status === "needs_action" ? "completed" : "needs_action";
     await this._callService("update_item", { item: item.uid, status: newStatus });
+    await this._fetchItems();
   }
 
   async _removeItem(item) {
     await this._callService("remove_item", { item: [item.uid] });
+    await this._fetchItems();
   }
 
-  async _updateQuantity(item, newQty) {
+  /* Optimistic update + debounce for rapid +/- clicks */
+  _updateQuantity(item, newQty) {
     const q = Math.max(1, newQty);
-    await this._callService("update_item", { item: item.uid, rename: formatSummary(item.name, q) });
+    const localItem = this._items.find((i) => i.uid === item.uid);
+    const name = localItem ? localItem.name : item.name;
+    if (localItem) {
+      localItem.quantity = q;
+      localItem.summary = formatSummary(name, q);
+    }
+    this._updateLists();
+
+    clearTimeout(this._qtyTimers[item.uid]);
+    this._qtyTimers[item.uid] = setTimeout(async () => {
+      delete this._qtyTimers[item.uid];
+      await this._callService("update_item", {
+        item: item.uid,
+        rename: formatSummary(name, q),
+      });
+      await this._fetchItems();
+    }, 500);
   }
 
   async _updateName(item, newName) {
     await this._callService("update_item", { item: item.uid, rename: formatSummary(newName.trim(), item.quantity) });
+    await this._fetchItems();
   }
 
   async _updateNotes(item, notes) {
-    await this._callService("update_item", { item: item.uid, description: notes });
+    try {
+      await this._hass.callService(
+        "todo",
+        "update_item",
+        { item: item.uid, description: notes },
+        { entity_id: this._config.entity }
+      );
+      const localItem = this._items.find((i) => i.uid === item.uid);
+      if (localItem) localItem.notes = notes;
+      this._updateLists();
+    } catch (e) {
+      console.error("ESL: failed to update notes", e);
+      this._showNoteError(item.uid, "Ta encja nie obsługuje notatek");
+    }
+  }
+
+  _showNoteError(uid, message) {
+    const container = this.shadowRoot.querySelector(
+      `.item-container[data-uid="${uid}"]`
+    );
+    if (!container) return;
+    const errorEl = container.querySelector(".note-error");
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.style.display = "";
+    }
   }
 
   async _clearCompleted() {
     const completed = this._items.filter((i) => i.status === "completed");
     if (completed.length === 0) return;
-    await this._callService("remove_item", { item: completed.map((i) => i.uid) });
+    await this._callService("remove_item", {
+      item: completed.map((i) => i.uid),
+    });
+    await this._fetchItems();
   }
 
   /* ---------- add with smart duplicate handling ---------- */
@@ -170,16 +220,24 @@ class EnhancedShoppingListCard extends HTMLElement {
     const name = (this._inputValue || "").trim();
     if (!name) return;
     const active = this._items.find(
-      (i) => i.status === "needs_action" && i.name.toLowerCase() === name.toLowerCase()
+      (i) =>
+        i.status === "needs_action" &&
+        i.name.toLowerCase() === name.toLowerCase()
     );
     if (active) {
-      await this._updateQuantity(active, active.quantity + 1);
+      this._updateQuantity(active, active.quantity + 1);
     } else {
       const completed = this._items.find(
-        (i) => i.status === "completed" && i.name.toLowerCase() === name.toLowerCase()
+        (i) =>
+          i.status === "completed" &&
+          i.name.toLowerCase() === name.toLowerCase()
       );
       if (completed) {
-        await this._callService("update_item", { item: completed.uid, status: "needs_action" });
+        await this._callService("update_item", {
+          item: completed.uid,
+          status: "needs_action",
+        });
+        await this._fetchItems();
       } else {
         await this._addItem(name);
       }
@@ -197,7 +255,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (sortBy === "alphabetical") {
       return [...items].sort((a, b) => a.name.localeCompare(b.name, "pl"));
     }
-    return items; // manual = insertion order from HA
+    return items;
   }
 
   /* ---------- rendering ---------- */
@@ -262,17 +320,14 @@ class EnhancedShoppingListCard extends HTMLElement {
       setTimeout(() => this._hideSuggestions(), 200);
     });
 
-    // Add button
     root.querySelector(".add-btn").addEventListener("click", () => this._addCurrentInput());
 
-    // Completed section toggle
     root.querySelector(".completed-header").addEventListener("click", (e) => {
       if (e.target.closest(".clear-btn")) return;
       this._completedExpanded = !this._completedExpanded;
       this._updateCompletedVisibility();
     });
 
-    // Clear completed
     root.querySelector(".clear-btn").addEventListener("click", (e) => {
       e.stopPropagation();
       root.querySelector(".confirm-dialog").style.display = "flex";
@@ -355,6 +410,10 @@ class EnhancedShoppingListCard extends HTMLElement {
         </div>
         <div class="note-editor" style="display:none">
           <textarea class="note-input" placeholder="Dodaj notatkę...">${esc(item.notes || "")}</textarea>
+          <div class="note-actions">
+            <button class="note-save-btn">Zapisz</button>
+            <span class="note-error" style="display:none"></span>
+          </div>
         </div>
       </div>`;
   }
@@ -363,13 +422,15 @@ class EnhancedShoppingListCard extends HTMLElement {
     return `
       <div class="item-container" data-uid="${item.uid}">
         <div class="item-row">
-          <div class="swipe-bg-left"><span class="delete-btn-swipe">Usuń</span></div>
           <div class="item completed-item" data-uid="${item.uid}">
             <div class="checkbox checked" data-action="toggle">
               <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="4,12 10,18 20,6" fill="none" stroke="var(--text-primary-color,#fff)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </div>
             <span class="item-name completed-name">${esc(item.name)}</span>
             <span class="completed-qty">${item.quantity > 1 ? item.quantity + " szt." : ""}</span>
+            <button class="delete-item-btn" data-action="delete" title="Usuń z listy">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" fill="none" stroke="var(--error-color, #f44336)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
           </div>
         </div>
       </div>`;
@@ -383,7 +444,6 @@ class EnhancedShoppingListCard extends HTMLElement {
       const item = items.find((i) => i.uid === uid);
       if (!item) return;
 
-      // Click actions on the item-row
       const itemRow = el.querySelector(".item-row");
       itemRow.addEventListener("click", (e) => {
         const action = e.target.closest("[data-action]");
@@ -409,6 +469,9 @@ class EnhancedShoppingListCard extends HTMLElement {
           case "toggle-note":
             this._toggleNoteEditor(el, item);
             break;
+          case "delete":
+            this._removeItem(item);
+            break;
         }
       });
 
@@ -418,7 +481,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         });
       }
 
-      // Swipe delete button
+      // Swipe delete button (active items only — completed items have explicit delete btn)
       el.querySelectorAll(".delete-btn-swipe").forEach((btn) => {
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -426,7 +489,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         });
       });
 
-      // Touch swipe
+      // Touch swipe (active items have right-swipe-to-complete + left-swipe-to-delete)
       const itemEl = el.querySelector(".item");
       let touchState = null;
       let swipeOffset = 0;
@@ -435,7 +498,6 @@ class EnhancedShoppingListCard extends HTMLElement {
         const touch = e.touches[0];
         touchState = { startX: touch.clientX, startY: touch.clientY, dir: null };
         swipeOffset = 0;
-        // Reset other swiped items
         container.querySelectorAll(".item").forEach((other) => {
           if (other !== itemEl) other.style.transform = "";
         });
@@ -540,19 +602,32 @@ class EnhancedShoppingListCard extends HTMLElement {
     editor.style.display = isOpen ? "none" : "";
     if (!isOpen) {
       const textarea = editor.querySelector(".note-input");
+      const errorEl = editor.querySelector(".note-error");
       textarea.focus();
-      textarea.addEventListener("blur", () => {
+      if (errorEl) errorEl.style.display = "none";
+
+      const save = () => {
         const notes = textarea.value;
         if (notes !== (item.notes || "")) {
           this._updateNotes(item, notes);
+        } else {
+          editor.style.display = "none";
         }
-      }, { once: true });
-      textarea.addEventListener("keydown", (e) => {
+      };
+
+      // Replace save button to avoid duplicate listeners on re-open
+      const oldBtn = editor.querySelector(".note-save-btn");
+      const newBtn = oldBtn.cloneNode(true);
+      oldBtn.replaceWith(newBtn);
+      newBtn.addEventListener("click", () => save());
+
+      // Enter to save (Shift+Enter for newline)
+      textarea.onkeydown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          textarea.blur();
+          save();
         }
-      });
+      };
     }
   }
 
@@ -596,9 +671,10 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   async _selectSuggestion(item) {
     if (item.status === "needs_action") {
-      await this._updateQuantity(item, item.quantity + 1);
+      this._updateQuantity(item, item.quantity + 1);
     } else {
       await this._callService("update_item", { item: item.uid, status: "needs_action" });
+      await this._fetchItems();
     }
     this._inputValue = "";
     const input = this.shadowRoot.querySelector(".add-input");
@@ -706,7 +782,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         font-family: inherit; outline: none; min-width: 0;
       }
       .completed-name { text-decoration: line-through; opacity: 0.6; }
-      .completed-item { opacity: 0.6; cursor: pointer; }
+      .completed-item { cursor: pointer; }
       .completed-qty { font-size: 12px; color: var(--secondary-text-color); opacity: 0.8; white-space: nowrap; }
 
       /* Quantity */
@@ -743,7 +819,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .note-btn.has-note svg { opacity: 1; }
       .note-btn:not(.has-note) svg { opacity: 0.4; }
 
-      /* Note editor — outside item-row so swipe backgrounds don't cover it */
+      /* Note editor */
       .note-editor {
         padding: 4px 8px 8px 38px;
         background: var(--card-background-color, #fff);
@@ -757,6 +833,27 @@ class EnhancedShoppingListCard extends HTMLElement {
         resize: vertical; min-height: 36px; max-height: 100px; transition: border-color 0.2s;
       }
       .note-input:focus { border-color: var(--primary-color); }
+      .note-actions {
+        display: flex; align-items: center; gap: 8px; margin-top: 6px;
+      }
+      .note-save-btn {
+        padding: 4px 14px; border-radius: 4px; border: none; font-size: 13px;
+        cursor: pointer; font-weight: 500;
+        background: var(--primary-color); color: var(--text-primary-color, #fff);
+        transition: opacity 0.15s;
+      }
+      .note-save-btn:hover { opacity: 0.85; }
+      .note-error {
+        font-size: 12px; color: var(--error-color, #f44336);
+      }
+
+      /* Delete button for completed items */
+      .delete-item-btn {
+        background: none; border: none; padding: 4px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 4px; transition: background 0.15s; flex-shrink: 0; opacity: 0.7;
+      }
+      .delete-item-btn:hover { background: rgba(244,67,54,0.1); opacity: 1; }
 
       /* Completed */
       .completed-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
@@ -846,7 +943,6 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
       </div>
     `;
 
-    // HA entity picker — works in light DOM
     const pickerRow = this.querySelector("#picker-row");
     const label = document.createElement("label");
     label.textContent = "Lista todo";
@@ -863,13 +959,11 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     });
     pickerRow.appendChild(picker);
 
-    // Title
     this.querySelector("#esl-title").addEventListener("input", (e) => {
       this._config = { ...this._config, title: e.target.value };
       this._fireChanged();
     });
 
-    // Sort
     this.querySelector("#esl-sort").addEventListener("change", (e) => {
       this._config = { ...this._config, sort_by: e.target.value };
       this._fireChanged();
@@ -902,7 +996,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.1.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.2.0 ",
   "background:#4CAF50;color:white;font-weight:bold;",
   "background:#333;color:white;"
 );
