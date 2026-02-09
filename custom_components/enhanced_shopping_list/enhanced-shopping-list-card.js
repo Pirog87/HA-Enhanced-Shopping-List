@@ -1,11 +1,26 @@
 /**
  * Enhanced Shopping List Card for Home Assistant
- * Plain Web Component — no external dependencies
+ * Works with any todo.* entity (native HA shopping list)
+ * No external dependencies — plain Web Component with Shadow DOM
  */
 
 /* ------------------------------------------------------------------ */
-/*  Fuzzy search helper                                                */
+/*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
+
+/** Parse quantity from summary: "Mleko (3)" → { name: "Mleko", qty: 3 } */
+function parseQuantity(summary) {
+  const m = (summary || "").match(/^(.+?)\s*\((\d+)\)$/);
+  if (m) return { name: m[1].trim(), qty: parseInt(m[2], 10) };
+  return { name: (summary || "").trim(), qty: 1 };
+}
+
+/** Build summary with quantity: ("Mleko", 3) → "Mleko (3)" */
+function formatSummary(name, qty) {
+  return qty > 1 ? `${name} (${qty})` : name;
+}
+
+/** Simple fuzzy match scoring */
 function fuzzyScore(query, target) {
   const q = query.toLowerCase();
   const t = target.toLowerCase();
@@ -22,6 +37,13 @@ function fuzzyScore(query, target) {
   return qi === q.length ? score : 0;
 }
 
+/** Escape HTML */
+function esc(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Card                                                               */
 /* ------------------------------------------------------------------ */
@@ -34,21 +56,25 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._inputValue = "";
     this._suggestions = [];
     this._completedExpanded = false;
-    this._editingNote = null;
-    this._editingName = null;
-    this._editingQty = null;
     this._showConfirmClear = false;
-    this._swipedItemId = null;
-    this._swipeOffset = 0;
     this._touchState = null;
     this._debounceTimer = null;
-    this._unsubscribe = null;
     this._hass = null;
     this._rendered = false;
+    this._updating = false;
   }
 
+  /* ---------- HA card interface ---------- */
+
   setConfig(config) {
-    this._config = config || {};
+    if (!config.entity) {
+      throw new Error("Please define an entity (todo.*)");
+    }
+    this._config = config;
+    if (this._rendered) {
+      this._render();
+      this._fetchItems();
+    }
   }
 
   getCardSize() {
@@ -60,16 +86,28 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { title: "Lista zakupów" };
+    return { entity: "", title: "Lista zakupów" };
   }
 
   set hass(hass) {
+    const oldHass = this._hass;
     this._hass = hass;
+
     if (!this._rendered) {
       this._render();
       this._rendered = true;
-      this._subscribeEvents();
       this._fetchItems();
+      return;
+    }
+
+    // Only refetch when the todo entity state changes
+    const entity = this._config.entity;
+    if (entity && oldHass) {
+      const oldState = oldHass.states[entity];
+      const newState = hass.states[entity];
+      if (!oldState || oldState.last_updated !== newState?.last_updated) {
+        this._fetchItems();
+      }
     }
   }
 
@@ -77,49 +115,131 @@ class EnhancedShoppingListCard extends HTMLElement {
     return this._hass;
   }
 
-  connectedCallback() {
-    if (this._hass && !this._unsubscribe) {
-      this._subscribeEvents();
-      this._fetchItems();
-    }
-  }
-
-  disconnectedCallback() {
-    if (this._unsubscribe) {
-      this._unsubscribe();
-      this._unsubscribe = null;
-    }
-  }
-
-  /* ---------- events ---------- */
-
-  _subscribeEvents() {
-    if (!this._hass || !this._hass.connection || this._unsubscribe) return;
-    this._hass.connection
-      .subscribeEvents(() => this._fetchItems(), "enhanced_shopping_list_updated")
-      .then((unsub) => { this._unsubscribe = unsub; });
-  }
+  /* ---------- data: native HA todo API ---------- */
 
   async _fetchItems() {
-    if (!this._hass) return;
+    if (!this._hass || !this._config.entity) return;
     try {
-      const result = await this._hass.connection.sendMessagePromise({
-        type: "enhanced_shopping_list/items",
+      const res = await this._hass.callWS({
+        type: "todo/item/list",
+        entity_id: this._config.entity,
       });
-      this._items = result || [];
+      this._items = (res.items || []).map((item) => {
+        const { name, qty } = parseQuantity(item.summary);
+        return {
+          uid: item.uid,
+          name,
+          quantity: qty,
+          notes: item.description || "",
+          status: item.status,
+          summary: item.summary,
+        };
+      });
       this._updateLists();
     } catch (e) {
       console.error("Enhanced Shopping List: failed to fetch items", e);
     }
   }
 
-  async _wsCommand(type, data = {}) {
-    if (!this._hass) return;
+  async _callService(service, data) {
+    if (!this._hass || this._updating) return;
+    this._updating = true;
     try {
-      await this._hass.connection.sendMessagePromise({ type, ...data });
+      await this._hass.callService("todo", service, data, {
+        entity_id: this._config.entity,
+      });
     } catch (e) {
-      console.error(`ESL WS error (${type}):`, e);
+      console.error(`ESL service error (todo.${service}):`, e);
+    } finally {
+      this._updating = false;
     }
+  }
+
+  async _addItem(name, qty = 1) {
+    await this._callService("add_item", {
+      item: formatSummary(name, qty),
+    });
+  }
+
+  async _toggleComplete(item) {
+    const newStatus =
+      item.status === "needs_action" ? "completed" : "needs_action";
+    await this._callService("update_item", {
+      item: item.uid,
+      status: newStatus,
+    });
+  }
+
+  async _removeItem(item) {
+    await this._callService("remove_item", {
+      item: [item.uid],
+    });
+  }
+
+  async _updateQuantity(item, newQty) {
+    await this._callService("update_item", {
+      item: item.uid,
+      rename: formatSummary(item.name, Math.max(1, newQty)),
+    });
+  }
+
+  async _updateName(item, newName) {
+    await this._callService("update_item", {
+      item: item.uid,
+      rename: formatSummary(newName.trim(), item.quantity),
+    });
+  }
+
+  async _updateNotes(item, notes) {
+    await this._callService("update_item", {
+      item: item.uid,
+      description: notes,
+    });
+  }
+
+  async _clearCompleted() {
+    const completed = this._items.filter((i) => i.status === "completed");
+    if (completed.length === 0) return;
+    await this._callService("remove_item", {
+      item: completed.map((i) => i.uid),
+    });
+  }
+
+  /* ---------- add with smart duplicate handling ---------- */
+
+  async _addCurrentInput() {
+    const name = (this._inputValue || "").trim();
+    if (!name) return;
+
+    // Check for existing active item → increment quantity
+    const active = this._items.find(
+      (i) =>
+        i.status === "needs_action" &&
+        i.name.toLowerCase() === name.toLowerCase()
+    );
+    if (active) {
+      await this._updateQuantity(active, active.quantity + 1);
+    } else {
+      // Check for completed item → reactivate
+      const completed = this._items.find(
+        (i) =>
+          i.status === "completed" &&
+          i.name.toLowerCase() === name.toLowerCase()
+      );
+      if (completed) {
+        await this._callService("update_item", {
+          item: completed.uid,
+          status: "needs_action",
+        });
+      } else {
+        await this._addItem(name);
+      }
+    }
+
+    this._inputValue = "";
+    const input = this.shadowRoot.querySelector(".add-input");
+    if (input) input.value = "";
+    this._hideSuggestions();
   }
 
   /* ---------- rendering ---------- */
@@ -129,7 +249,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${EnhancedShoppingListCard.cardStyles}</style>
       <ha-card>
-        <div class="card-header">${this._esc(title)}</div>
+        <div class="card-header">${esc(title)}</div>
         <div class="card-content">
           <div class="add-section">
             <div class="input-wrapper">
@@ -138,12 +258,12 @@ class EnhancedShoppingListCard extends HTMLElement {
             <div class="suggestions" style="display:none"></div>
           </div>
           <div class="section active-section">
-            <div class="section-header">Do zakupu (<span class="active-count">0</span>)</div>
+            <div class="section-header">Do kupienia (<span class="active-count">0</span>)</div>
             <div class="active-list"></div>
           </div>
           <div class="section completed-section" style="display:none">
             <div class="section-header completed-header">
-              <span>Kupione (<span class="completed-count">0</span>) <span class="chevron">▼</span></span>
+              <span>Kupione (<span class="completed-count">0</span>) <span class="chevron">&#9660;</span></span>
               <button class="clear-btn" title="Wyczyść kupione">
                 <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
@@ -179,19 +299,17 @@ class EnhancedShoppingListCard extends HTMLElement {
     });
 
     input.addEventListener("blur", () => {
-      setTimeout(() => {
-        const sg = root.querySelector(".suggestions");
-        if (sg) sg.style.display = "none";
-        this._suggestions = [];
-      }, 200);
+      setTimeout(() => this._hideSuggestions(), 200);
     });
 
     // Completed section toggle
-    root.querySelector(".completed-header").addEventListener("click", (e) => {
-      if (e.target.closest(".clear-btn")) return;
-      this._completedExpanded = !this._completedExpanded;
-      this._updateCompletedVisibility();
-    });
+    root
+      .querySelector(".completed-header")
+      .addEventListener("click", (e) => {
+        if (e.target.closest(".clear-btn")) return;
+        this._completedExpanded = !this._completedExpanded;
+        this._updateCompletedVisibility();
+      });
 
     // Clear completed
     root.querySelector(".clear-btn").addEventListener("click", (e) => {
@@ -203,7 +321,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     root.querySelector(".confirm-yes").addEventListener("click", () => {
       this._showConfirmClear = false;
       root.querySelector(".confirm-dialog").style.display = "none";
-      this._wsCommand("enhanced_shopping_list/clear_completed");
+      this._clearCompleted();
     });
 
     root.querySelector(".confirm-no").addEventListener("click", () => {
@@ -212,10 +330,10 @@ class EnhancedShoppingListCard extends HTMLElement {
     });
   }
 
-  _esc(s) {
-    const d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
+  _hideSuggestions() {
+    this._suggestions = [];
+    const sg = this.shadowRoot.querySelector(".suggestions");
+    if (sg) sg.style.display = "none";
   }
 
   /* ---------- update lists ---------- */
@@ -224,8 +342,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     const root = this.shadowRoot;
     if (!root) return;
 
-    const active = this._items.filter((i) => !i.complete);
-    const completed = this._items.filter((i) => i.complete);
+    const active = this._items.filter((i) => i.status === "needs_action");
+    const completed = this._items.filter((i) => i.status === "completed");
 
     root.querySelector(".active-count").textContent = active.length;
     root.querySelector(".completed-count").textContent = completed.length;
@@ -233,9 +351,12 @@ class EnhancedShoppingListCard extends HTMLElement {
     // Active list
     const activeList = root.querySelector(".active-list");
     if (active.length === 0) {
-      activeList.innerHTML = '<div class="empty">Lista zakupów jest pusta</div>';
+      activeList.innerHTML =
+        '<div class="empty">Lista zakupów jest pusta</div>';
     } else {
-      activeList.innerHTML = active.map((item) => this._renderActiveItem(item)).join("");
+      activeList.innerHTML = active
+        .map((item) => this._renderActiveItem(item))
+        .join("");
       this._bindItemEvents(activeList, active, false);
     }
 
@@ -244,7 +365,9 @@ class EnhancedShoppingListCard extends HTMLElement {
     completedSection.style.display = completed.length > 0 ? "" : "none";
 
     const completedList = root.querySelector(".completed-list");
-    completedList.innerHTML = completed.map((item) => this._renderCompletedItem(item)).join("");
+    completedList.innerHTML = completed
+      .map((item) => this._renderCompletedItem(item))
+      .join("");
     this._bindItemEvents(completedList, completed, true);
 
     this._updateCompletedVisibility();
@@ -259,21 +382,20 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _renderActiveItem(item) {
-    const qty = item.quantity || 1;
     const hasNote = item.notes ? "has-note" : "";
     return `
-      <div class="item-container" data-id="${item.id}">
-        <div class="swipe-bg-right"><span class="swipe-icon">✓</span></div>
+      <div class="item-container" data-uid="${item.uid}">
+        <div class="swipe-bg-right"><span class="swipe-icon">&#10003;</span></div>
         <div class="swipe-bg-left"><span class="delete-btn-swipe">Usuń</span></div>
-        <div class="item" data-id="${item.id}">
+        <div class="item" data-uid="${item.uid}">
           <div class="checkbox" data-action="toggle"></div>
-          <span class="item-name" data-action="edit-name">${this._esc(item.name)}</span>
+          <span class="item-name" data-action="edit-name">${esc(item.name)}</span>
           <div class="qty-controls">
-            <button class="qty-btn" data-action="qty-minus">−</button>
-            <span class="qty-value" data-action="edit-qty">${qty}</span>
+            <button class="qty-btn" data-action="qty-minus">&minus;</button>
+            <span class="qty-value" data-action="edit-qty">${item.quantity}</span>
             <button class="qty-btn" data-action="qty-plus">+</button>
           </div>
-          <button class="note-btn ${hasNote}" data-action="toggle-note" title="${this._esc(item.notes || "Dodaj notatkę")}">
+          <button class="note-btn ${hasNote}" data-action="toggle-note" title="${esc(item.notes || "Dodaj notatkę")}">
             <svg viewBox="0 0 24 24" width="18" height="18">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--secondary-text-color)"}" stroke-width="1.5"/>
               <polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--secondary-text-color)"}" stroke-width="1.5"/>
@@ -283,21 +405,21 @@ class EnhancedShoppingListCard extends HTMLElement {
           </button>
         </div>
         <div class="note-editor" style="display:none">
-          <textarea class="note-input" placeholder="Dodaj notatkę...">${this._esc(item.notes || "")}</textarea>
+          <textarea class="note-input" placeholder="Dodaj notatkę...">${esc(item.notes || "")}</textarea>
         </div>
       </div>`;
   }
 
   _renderCompletedItem(item) {
     return `
-      <div class="item-container" data-id="${item.id}">
+      <div class="item-container" data-uid="${item.uid}">
         <div class="swipe-bg-left"><span class="delete-btn-swipe">Usuń</span></div>
-        <div class="item completed-item" data-id="${item.id}">
+        <div class="item completed-item" data-uid="${item.uid}">
           <div class="checkbox checked" data-action="toggle">
             <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="4,12 10,18 20,6" fill="none" stroke="var(--text-primary-color,#fff)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
-          <span class="item-name completed-name">${this._esc(item.name)}</span>
-          <span class="completed-qty">${item.quantity || 1} szt.</span>
+          <span class="item-name completed-name">${esc(item.name)}</span>
+          <span class="completed-qty">${item.quantity > 1 ? item.quantity + " szt." : ""}</span>
         </div>
       </div>`;
   }
@@ -306,8 +428,8 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _bindItemEvents(container, items, isCompleted) {
     container.querySelectorAll(".item-container").forEach((el) => {
-      const id = el.dataset.id;
-      const item = items.find((i) => i.id === id);
+      const uid = el.dataset.uid;
+      const item = items.find((i) => i.uid === uid);
       if (!item) return;
 
       // Click actions
@@ -323,10 +445,10 @@ class EnhancedShoppingListCard extends HTMLElement {
             else this._toggleComplete(item);
             break;
           case "qty-minus":
-            this._changeQty(item, -1);
+            this._updateQuantity(item, item.quantity - 1);
             break;
           case "qty-plus":
-            this._changeQty(item, 1);
+            this._updateQuantity(item, item.quantity + 1);
             break;
           case "edit-qty":
             this._startEditQty(el, item);
@@ -357,47 +479,62 @@ class EnhancedShoppingListCard extends HTMLElement {
       let touchState = null;
       let swipeOffset = 0;
 
-      itemEl.addEventListener("touchstart", (e) => {
-        const touch = e.touches[0];
-        touchState = { startX: touch.clientX, startY: touch.clientY, dir: null };
-        swipeOffset = 0;
-        // Reset other swiped items
-        container.querySelectorAll(".item").forEach((other) => {
-          if (other !== itemEl) other.style.transform = "";
-        });
-      }, { passive: true });
+      itemEl.addEventListener(
+        "touchstart",
+        (e) => {
+          const touch = e.touches[0];
+          touchState = {
+            startX: touch.clientX,
+            startY: touch.clientY,
+            dir: null,
+          };
+          swipeOffset = 0;
+          container.querySelectorAll(".item").forEach((other) => {
+            if (other !== itemEl) other.style.transform = "";
+          });
+        },
+        { passive: true }
+      );
 
-      itemEl.addEventListener("touchmove", (e) => {
-        if (!touchState) return;
-        const touch = e.touches[0];
-        const dx = touch.clientX - touchState.startX;
-        const dy = touch.clientY - touchState.startY;
-        if (!touchState.dir) {
-          if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-            touchState.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      itemEl.addEventListener(
+        "touchmove",
+        (e) => {
+          if (!touchState) return;
+          const touch = e.touches[0];
+          const dx = touch.clientX - touchState.startX;
+          const dy = touch.clientY - touchState.startY;
+          if (!touchState.dir) {
+            if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+              touchState.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+            }
           }
-        }
-        if (touchState.dir === "h") {
-          e.preventDefault();
-          swipeOffset = isCompleted ? Math.min(0, dx) : dx;
-          itemEl.style.transition = "none";
-          itemEl.style.transform = `translateX(${swipeOffset}px)`;
-        }
-      }, { passive: false });
+          if (touchState.dir === "h") {
+            e.preventDefault();
+            swipeOffset = isCompleted ? Math.min(0, dx) : dx;
+            itemEl.style.transition = "none";
+            itemEl.style.transform = `translateX(${swipeOffset}px)`;
+          }
+        },
+        { passive: false }
+      );
 
-      itemEl.addEventListener("touchend", () => {
-        if (!touchState) return;
-        itemEl.style.transition = "transform 0.25s ease";
-        if (swipeOffset > 80 && !isCompleted) {
-          itemEl.style.transform = "";
-          this._toggleComplete(item);
-        } else if (swipeOffset < -80) {
-          itemEl.style.transform = `translateX(-80px)`;
-        } else {
-          itemEl.style.transform = "";
-        }
-        touchState = null;
-      }, { passive: true });
+      itemEl.addEventListener(
+        "touchend",
+        () => {
+          if (!touchState) return;
+          itemEl.style.transition = "transform 0.25s ease";
+          if (swipeOffset > 80 && !isCompleted) {
+            itemEl.style.transform = "";
+            this._toggleComplete(item);
+          } else if (swipeOffset < -80) {
+            itemEl.style.transform = "translateX(-80px)";
+          } else {
+            itemEl.style.transform = "";
+          }
+          touchState = null;
+        },
+        { passive: true }
+      );
     });
   }
 
@@ -416,14 +553,14 @@ class EnhancedShoppingListCard extends HTMLElement {
     const save = () => {
       const name = input.value.trim();
       if (name && name !== item.name) {
-        this._wsCommand("enhanced_shopping_list/update", { item_id: item.id, name });
+        this._updateName(item, name);
       } else {
         this._updateLists();
       }
     };
     input.addEventListener("blur", save);
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") save();
+      if (e.key === "Enter") { input.blur(); }
       if (e.key === "Escape") this._updateLists();
     });
   }
@@ -434,7 +571,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     input.className = "qty-input";
     input.type = "number";
     input.min = "1";
-    input.value = String(item.quantity || 1);
+    input.value = String(item.quantity);
     qtyEl.replaceWith(input);
     input.focus();
     input.select();
@@ -442,14 +579,14 @@ class EnhancedShoppingListCard extends HTMLElement {
     const save = () => {
       const q = parseInt(input.value, 10);
       if (!isNaN(q) && q >= 1) {
-        this._wsCommand("enhanced_shopping_list/update", { item_id: item.id, quantity: q });
+        this._updateQuantity(item, q);
       } else {
         this._updateLists();
       }
     };
     input.addEventListener("blur", save);
     input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") save();
+      if (e.key === "Enter") { input.blur(); }
     });
   }
 
@@ -460,56 +597,23 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!isOpen) {
       const textarea = editor.querySelector(".note-input");
       textarea.focus();
-      textarea.addEventListener("blur", () => {
-        this._wsCommand("enhanced_shopping_list/update", {
-          item_id: item.id,
-          notes: textarea.value,
-        });
-      }, { once: true });
+      textarea.addEventListener(
+        "blur",
+        () => {
+          const notes = textarea.value;
+          if (notes !== (item.notes || "")) {
+            this._updateNotes(item, notes);
+          }
+        },
+        { once: true }
+      );
       textarea.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          this._wsCommand("enhanced_shopping_list/update", {
-            item_id: item.id,
-            notes: textarea.value,
-          });
-          editor.style.display = "none";
+          textarea.blur();
         }
       });
     }
-  }
-
-  /* ---------- actions ---------- */
-
-  async _addCurrentInput() {
-    const name = (this._inputValue || "").trim();
-    if (!name) return;
-    await this._wsCommand("enhanced_shopping_list/add", { name, quantity: 1 });
-    this._inputValue = "";
-    const input = this.shadowRoot.querySelector(".add-input");
-    if (input) input.value = "";
-    this._suggestions = [];
-    const sg = this.shadowRoot.querySelector(".suggestions");
-    if (sg) sg.style.display = "none";
-  }
-
-  async _toggleComplete(item) {
-    const type = item.complete
-      ? "enhanced_shopping_list/uncomplete"
-      : "enhanced_shopping_list/complete";
-    await this._wsCommand(type, { item_id: item.id });
-  }
-
-  async _removeItem(item) {
-    await this._wsCommand("enhanced_shopping_list/remove", { item_id: item.id });
-  }
-
-  async _changeQty(item, delta) {
-    const newQty = Math.max(1, (item.quantity || 1) + delta);
-    await this._wsCommand("enhanced_shopping_list/update", {
-      item_id: item.id,
-      quantity: newQty,
-    });
   }
 
   /* ---------- suggestions ---------- */
@@ -518,8 +622,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     const q = (this._inputValue || "").trim();
     const sgContainer = this.shadowRoot.querySelector(".suggestions");
     if (q.length < 2) {
-      this._suggestions = [];
-      sgContainer.style.display = "none";
+      this._hideSuggestions();
       return;
     }
     const scored = this._items
@@ -546,12 +649,12 @@ class EnhancedShoppingListCard extends HTMLElement {
     sgContainer.style.display = "";
     sgContainer.innerHTML = this._suggestions
       .map((s) => {
-        const onList = !s.item.complete;
+        const onList = s.item.status === "needs_action";
         const badge = onList
-          ? `<span class="badge">na liście: ${s.item.quantity || 1} szt.</span>`
-          : "";
-        return `<div class="suggestion" data-id="${s.item.id}">
-          <span class="suggestion-name">${this._esc(s.item.name)}</span>${badge}
+          ? `<span class="badge">na liście: ${s.item.quantity} szt.</span>`
+          : `<span class="badge inactive">kupione</span>`;
+        return `<div class="suggestion" data-uid="${s.item.uid}">
+          <span class="suggestion-name">${esc(s.item.name)}</span>${badge}
         </div>`;
       })
       .join("");
@@ -559,30 +662,28 @@ class EnhancedShoppingListCard extends HTMLElement {
     sgContainer.querySelectorAll(".suggestion").forEach((el) => {
       el.addEventListener("mousedown", (e) => {
         e.preventDefault();
-        const id = el.dataset.id;
-        const item = this._items.find((i) => i.id === id);
+        const uid = el.dataset.uid;
+        const item = this._items.find((i) => i.uid === uid);
         if (item) this._selectSuggestion(item);
       });
     });
   }
 
   async _selectSuggestion(item) {
-    if (!item.complete) {
-      await this._wsCommand("enhanced_shopping_list/update", {
-        item_id: item.id,
-        quantity: (item.quantity || 1) + 1,
-      });
+    if (item.status === "needs_action") {
+      // Already active → increment quantity
+      await this._updateQuantity(item, item.quantity + 1);
     } else {
-      await this._wsCommand("enhanced_shopping_list/uncomplete", {
-        item_id: item.id,
+      // Completed → reactivate
+      await this._callService("update_item", {
+        item: item.uid,
+        status: "needs_action",
       });
     }
     this._inputValue = "";
     const input = this.shadowRoot.querySelector(".add-input");
     if (input) input.value = "";
-    this._suggestions = [];
-    const sg = this.shadowRoot.querySelector(".suggestions");
-    if (sg) sg.style.display = "none";
+    this._hideSuggestions();
   }
 
   /* ---------- styles ---------- */
@@ -640,6 +741,10 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: var(--primary-color);
         color: var(--text-primary-color, #fff);
         white-space: nowrap;
+      }
+      .badge.inactive {
+        background: var(--secondary-text-color);
+        opacity: 0.6;
       }
 
       /* Section */
@@ -839,13 +944,21 @@ class EnhancedShoppingListCard extends HTMLElement {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Simple editor for card config                                      */
+/*  Card config editor                                                 */
 /* ------------------------------------------------------------------ */
 class EnhancedShoppingListCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
     this._config = {};
+    this._hass = null;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    // Update entity picker if it exists
+    const picker = this.shadowRoot.querySelector("ha-entity-picker");
+    if (picker) picker.hass = hass;
   }
 
   setConfig(config) {
@@ -855,42 +968,85 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
 
   _render() {
     this.shadowRoot.innerHTML = `
-      <div style="padding:16px;">
-        <label style="display:block;margin-bottom:4px;font-size:14px;color:var(--primary-text-color);">
-          Tytuł karty
-        </label>
-        <input type="text" id="title"
-          value="${(this._config.title || "").replace(/"/g, "&quot;")}"
-          placeholder="Lista zakupów"
-          style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);font-family:inherit;"
-        />
+      <style>
+        .editor { padding: 16px; }
+        .row { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500; color: var(--primary-text-color); }
+        input[type="text"] {
+          width: 100%; box-sizing: border-box; padding: 8px;
+          border: 1px solid var(--divider-color); border-radius: 4px;
+          background: var(--card-background-color); color: var(--primary-text-color);
+          font-family: inherit; font-size: 14px;
+        }
+      </style>
+      <div class="editor">
+        <div class="row">
+          <label>Lista todo (entity)</label>
+          <div id="picker-container"></div>
+        </div>
+        <div class="row">
+          <label>Tytuł karty</label>
+          <input type="text" id="title"
+            value="${(this._config.title || "").replace(/"/g, "&quot;")}"
+            placeholder="Lista zakupów" />
+        </div>
       </div>
     `;
+
+    // Create HA entity picker programmatically
+    const pickerContainer = this.shadowRoot.querySelector("#picker-container");
+    const picker = document.createElement("ha-entity-picker");
+    picker.hass = this._hass;
+    picker.value = this._config.entity || "";
+    picker.includeDomains = ["todo"];
+    picker.required = true;
+    picker.addEventListener("value-changed", (e) => {
+      this._config = { ...this._config, entity: e.detail.value };
+      this._fireChanged();
+    });
+    pickerContainer.appendChild(picker);
+
+    // Title input
     this.shadowRoot.querySelector("#title").addEventListener("input", (e) => {
       this._config = { ...this._config, title: e.target.value };
-      this.dispatchEvent(
-        new CustomEvent("config-changed", {
-          detail: { config: this._config },
-          bubbles: true,
-          composed: true,
-        })
-      );
+      this._fireChanged();
     });
+  }
+
+  _fireChanged() {
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: this._config },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 }
 
 /* ------------------------------------------------------------------ */
 /*  Register                                                           */
 /* ------------------------------------------------------------------ */
-customElements.define("enhanced-shopping-list-card", EnhancedShoppingListCard);
-customElements.define("enhanced-shopping-list-card-editor", EnhancedShoppingListCardEditor);
+customElements.define(
+  "enhanced-shopping-list-card",
+  EnhancedShoppingListCard
+);
+customElements.define(
+  "enhanced-shopping-list-card-editor",
+  EnhancedShoppingListCardEditor
+);
 
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "enhanced-shopping-list-card",
   name: "Enhanced Shopping List",
-  description: "Rozbudowana lista zakupów z ilościami, notatkami i fuzzy search",
+  description:
+    "Rozbudowana lista zakupów z ilościami, notatkami i fuzzy search — działa z natywną listą todo HA",
   preview: false,
 });
 
-console.info("%c ENHANCED-SHOPPING-LIST %c v1.3.0 ", "background:#4CAF50;color:white;font-weight:bold;", "background:#333;color:white;");
+console.info(
+  "%c ENHANCED-SHOPPING-LIST %c v2.0.0 ",
+  "background:#4CAF50;color:white;font-weight:bold;",
+  "background:#333;color:white;"
+);
