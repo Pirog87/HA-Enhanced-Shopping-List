@@ -1,21 +1,30 @@
 /**
- * Enhanced Shopping List Card for Home Assistant
+ * Enhanced Shopping List Card v2.3.0
  * Works with any todo.* entity (native HA shopping list)
- * No external dependencies — plain Web Component with Shadow DOM
+ * Notes encoded in summary: "Name (qty) // note"
  */
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function parseQuantity(summary) {
-  const m = (summary || "").match(/^(.+?)\s*\((\d+)\)$/);
-  if (m) return { name: m[1].trim(), qty: parseInt(m[2], 10) };
-  return { name: (summary || "").trim(), qty: 1 };
+function parseSummary(summary) {
+  const s = (summary || "").trim();
+  let name = s, qty = 1, notes = "";
+  const noteIdx = s.indexOf(" // ");
+  if (noteIdx >= 0) {
+    notes = s.substring(noteIdx + 4).trim();
+    name = s.substring(0, noteIdx).trim();
+  }
+  const qm = name.match(/^(.+?)\s*\((\d+)\)$/);
+  if (qm) { name = qm[1].trim(); qty = parseInt(qm[2], 10); }
+  return { name, qty, notes };
 }
 
-function formatSummary(name, qty) {
-  return qty > 1 ? `${name} (${qty})` : name;
+function formatSummary(name, qty, notes) {
+  let s = qty > 1 ? `${name} (${qty})` : name;
+  if (notes) s += ` // ${notes}`;
+  return s;
 }
 
 function fuzzyScore(query, target) {
@@ -52,95 +61,64 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._inputValue = "";
     this._suggestions = [];
     this._completedExpanded = false;
-    this._showConfirmClear = false;
     this._debounceTimer = null;
     this._qtyTimers = {};
     this._hass = null;
     this._rendered = false;
   }
 
-  /* ---------- HA card interface ---------- */
-
   setConfig(config) {
-    if (!config.entity) {
-      throw new Error("Please define an entity (todo.*)");
-    }
+    if (!config.entity) throw new Error("Please define an entity (todo.*)");
     this._config = config;
-    if (this._rendered) {
-      this._render();
-      this._fetchItems();
-    }
+    if (this._rendered) { this._render(); this._fetchItems(); }
   }
 
   getCardSize() { return 3; }
-
-  static getConfigElement() {
-    return document.createElement("enhanced-shopping-list-card-editor");
-  }
-
-  static getStubConfig() {
-    return { entity: "", title: "Lista zakupów" };
-  }
+  static getConfigElement() { return document.createElement("enhanced-shopping-list-card-editor"); }
+  static getStubConfig() { return { entity: "", title: "Lista zakupów" }; }
 
   set hass(hass) {
     const oldHass = this._hass;
     this._hass = hass;
-    if (!this._rendered) {
-      this._render();
-      this._rendered = true;
-      this._fetchItems();
-      return;
-    }
+    if (!this._rendered) { this._render(); this._rendered = true; this._fetchItems(); return; }
     const entity = this._config.entity;
     if (entity && oldHass) {
-      const oldState = oldHass.states[entity];
-      const newState = hass.states[entity];
-      if (!oldState || oldState.last_updated !== newState?.last_updated) {
-        this._fetchItems();
-      }
+      const o = oldHass.states[entity], n = hass.states[entity];
+      if (!o || o.last_updated !== n?.last_updated) this._fetchItems();
     }
   }
 
   get hass() { return this._hass; }
 
-  /* ---------- data: native HA todo API ---------- */
+  /* ---------- data ---------- */
 
   async _fetchItems() {
     if (!this._hass || !this._config.entity) return;
     try {
-      const res = await this._hass.callWS({
-        type: "todo/item/list",
-        entity_id: this._config.entity,
-      });
-      this._items = (res.items || []).map((item) => {
-        const { name, qty } = parseQuantity(item.summary);
-        return { uid: item.uid, name, quantity: qty, notes: item.description || "", status: item.status, summary: item.summary };
+      const res = await this._hass.callWS({ type: "todo/item/list", entity_id: this._config.entity });
+      this._items = (res.items || []).map((it) => {
+        const { name, qty, notes } = parseSummary(it.summary);
+        return { uid: it.uid, name, quantity: qty, notes, status: it.status, summary: it.summary };
       });
       this._updateLists();
-    } catch (e) {
-      console.error("Enhanced Shopping List: failed to fetch items", e);
-    }
+    } catch (e) { console.error("ESL: fetch failed", e); }
   }
 
   async _callService(service, data) {
     if (!this._hass) return;
     try {
-      await this._hass.callService("todo", service, data, {
-        entity_id: this._config.entity,
-      });
-    } catch (e) {
-      console.error(`ESL service error (todo.${service}):`, e);
-    }
+      await this._hass.callService("todo", service, data, { entity_id: this._config.entity });
+    } catch (e) { console.error(`ESL: todo.${service} error`, e); }
   }
 
-  async _addItem(name, qty = 1) {
-    await this._callService("add_item", { item: formatSummary(name, qty) });
+  async _addItem(name, qty = 1, notes = "") {
+    await this._callService("add_item", { item: formatSummary(name, qty, notes) });
     await this._fetchItems();
   }
 
   async _toggleComplete(item) {
-    const newStatus = item.status === "needs_action" ? "completed" : "needs_action";
-    await this._callService("update_item", { item: item.uid, status: newStatus });
+    const s = item.status === "needs_action" ? "completed" : "needs_action";
+    await this._callService("update_item", { item: item.uid, status: s });
     await this._fetchItems();
   }
 
@@ -149,112 +127,69 @@ class EnhancedShoppingListCard extends HTMLElement {
     await this._fetchItems();
   }
 
-  /* Optimistic update + debounce for rapid +/- clicks */
   _updateQuantity(item, newQty) {
     const q = Math.max(1, newQty);
-    const localItem = this._items.find((i) => i.uid === item.uid);
-    const name = localItem ? localItem.name : item.name;
-    if (localItem) {
-      localItem.quantity = q;
-      localItem.summary = formatSummary(name, q);
-    }
+    const li = this._items.find(i => i.uid === item.uid);
+    const name = li ? li.name : item.name;
+    const notes = li ? li.notes : (item.notes || "");
+    if (li) { li.quantity = q; li.summary = formatSummary(name, q, notes); }
     this._updateLists();
-
     clearTimeout(this._qtyTimers[item.uid]);
     this._qtyTimers[item.uid] = setTimeout(async () => {
       delete this._qtyTimers[item.uid];
-      await this._callService("update_item", {
-        item: item.uid,
-        rename: formatSummary(name, q),
-      });
+      await this._callService("update_item", { item: item.uid, rename: formatSummary(name, q, notes) });
       await this._fetchItems();
     }, 500);
   }
 
   async _updateName(item, newName) {
-    await this._callService("update_item", { item: item.uid, rename: formatSummary(newName.trim(), item.quantity) });
-    await this._fetchItems();
-  }
-
-  async _updateNotes(item, notes) {
-    try {
-      await this._hass.callService(
-        "todo",
-        "update_item",
-        { item: item.uid, description: notes },
-        { entity_id: this._config.entity }
-      );
-      const localItem = this._items.find((i) => i.uid === item.uid);
-      if (localItem) localItem.notes = notes;
-      this._updateLists();
-    } catch (e) {
-      console.error("ESL: failed to update notes", e);
-      this._showNoteError(item.uid, "Ta encja nie obsługuje notatek");
-    }
-  }
-
-  _showNoteError(uid, message) {
-    const container = this.shadowRoot.querySelector(
-      `.item-container[data-uid="${uid}"]`
-    );
-    if (!container) return;
-    const errorEl = container.querySelector(".note-error");
-    if (errorEl) {
-      errorEl.textContent = message;
-      errorEl.style.display = "";
-    }
-  }
-
-  async _clearCompleted() {
-    const completed = this._items.filter((i) => i.status === "completed");
-    if (completed.length === 0) return;
-    await this._callService("remove_item", {
-      item: completed.map((i) => i.uid),
+    await this._callService("update_item", {
+      item: item.uid, rename: formatSummary(newName.trim(), item.quantity, item.notes || ""),
     });
     await this._fetchItems();
   }
 
-  /* ---------- add with smart duplicate handling ---------- */
+  async _updateNotes(item, notes) {
+    const li = this._items.find(i => i.uid === item.uid);
+    const name = li ? li.name : item.name;
+    const qty = li ? li.quantity : item.quantity;
+    await this._callService("update_item", {
+      item: item.uid, rename: formatSummary(name, qty, notes),
+    });
+    if (li) li.notes = notes;
+    await this._fetchItems();
+  }
+
+  async _clearCompleted() {
+    const c = this._items.filter(i => i.status === "completed");
+    if (!c.length) return;
+    await this._callService("remove_item", { item: c.map(i => i.uid) });
+    await this._fetchItems();
+  }
 
   async _addCurrentInput() {
     const name = (this._inputValue || "").trim();
     if (!name) return;
-    const active = this._items.find(
-      (i) =>
-        i.status === "needs_action" &&
-        i.name.toLowerCase() === name.toLowerCase()
-    );
+    const active = this._items.find(i => i.status === "needs_action" && i.name.toLowerCase() === name.toLowerCase());
     if (active) {
       this._updateQuantity(active, active.quantity + 1);
     } else {
-      const completed = this._items.find(
-        (i) =>
-          i.status === "completed" &&
-          i.name.toLowerCase() === name.toLowerCase()
-      );
-      if (completed) {
-        await this._callService("update_item", {
-          item: completed.uid,
-          status: "needs_action",
-        });
+      const done = this._items.find(i => i.status === "completed" && i.name.toLowerCase() === name.toLowerCase());
+      if (done) {
+        await this._callService("update_item", { item: done.uid, status: "needs_action" });
         await this._fetchItems();
       } else {
         await this._addItem(name);
       }
     }
     this._inputValue = "";
-    const input = this.shadowRoot.querySelector(".add-input");
-    if (input) input.value = "";
+    const inp = this.shadowRoot.querySelector(".add-input");
+    if (inp) inp.value = "";
     this._hideSuggestions();
   }
 
-  /* ---------- sorting ---------- */
-
   _sortItems(items) {
-    const sortBy = this._config.sort_by || "manual";
-    if (sortBy === "alphabetical") {
-      return [...items].sort((a, b) => a.name.localeCompare(b.name, "pl"));
-    }
+    if (this._config.sort_by === "alphabetical") return [...items].sort((a, b) => a.name.localeCompare(b.name, "pl"));
     return items;
   }
 
@@ -263,371 +198,276 @@ class EnhancedShoppingListCard extends HTMLElement {
   _render() {
     const title = this._config.title || "Lista zakupów";
     this.shadowRoot.innerHTML = `
-      <style>${EnhancedShoppingListCard.cardStyles}</style>
+      <style>${EnhancedShoppingListCard.CSS}</style>
       <ha-card>
-        <div class="card-header">${esc(title)}</div>
-        <div class="card-content">
+        <div class="header">${esc(title)}</div>
+        <div class="content">
           <div class="add-section">
             <div class="input-row">
               <input class="add-input" type="text" placeholder="Dodaj produkt..." />
               <button class="add-btn" title="Dodaj">
-                <svg viewBox="0 0 24 24" width="20" height="20">
-                  <circle cx="12" cy="12" r="10" fill="var(--primary-color)" />
-                  <line x1="12" y1="7" x2="12" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/>
-                  <line x1="7" y1="12" x2="17" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <svg viewBox="0 0 24 24" width="28" height="28">
+                  <circle cx="12" cy="12" r="11" fill="var(--primary-color)"/>
+                  <path d="M12 7v10M7 12h10" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
                 </svg>
               </button>
             </div>
             <div class="suggestions" style="display:none"></div>
           </div>
           <div class="section active-section">
-            <div class="section-header">Do kupienia (<span class="active-count">0</span>)</div>
+            <div class="section-title">Do kupienia <span class="badge-count active-count">0</span></div>
             <div class="active-list"></div>
           </div>
           <div class="section completed-section" style="display:none">
-            <div class="section-header completed-header">
-              <span>Kupione (<span class="completed-count">0</span>) <span class="chevron">&#9660;</span></span>
-              <button class="clear-btn" title="Wyczyść kupione">
-                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="section-title completed-header">
+              <span>Kupione <span class="badge-count completed-count">0</span> <span class="chevron">&#9660;</span></span>
+              <button class="clear-all-btn" title="Wyczysc kupione">
+                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
               </button>
             </div>
-            <div class="confirm-dialog" style="display:none">
-              <span>Usunąć wszystkie kupione?</span>
-              <button class="confirm-yes">Tak</button>
-              <button class="confirm-no">Nie</button>
+            <div class="confirm-bar" style="display:none">
+              <span>Usunac wszystkie kupione?</span>
+              <button class="btn-yes">Tak</button>
+              <button class="btn-no">Nie</button>
             </div>
             <div class="completed-list" style="display:none"></div>
           </div>
         </div>
-      </ha-card>
-    `;
-    this._bindEvents();
+      </ha-card>`;
+    this._bindGlobalEvents();
   }
 
-  _bindEvents() {
-    const root = this.shadowRoot;
-    const input = root.querySelector(".add-input");
-
-    input.addEventListener("input", (e) => {
+  _bindGlobalEvents() {
+    const R = this.shadowRoot;
+    const inp = R.querySelector(".add-input");
+    inp.addEventListener("input", e => {
       this._inputValue = e.target.value;
       clearTimeout(this._debounceTimer);
       this._debounceTimer = setTimeout(() => this._updateSuggestions(), 300);
     });
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); this._addCurrentInput(); }
-    });
-    input.addEventListener("blur", () => {
-      setTimeout(() => this._hideSuggestions(), 200);
-    });
-
-    root.querySelector(".add-btn").addEventListener("click", () => this._addCurrentInput());
-
-    root.querySelector(".completed-header").addEventListener("click", (e) => {
-      if (e.target.closest(".clear-btn")) return;
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); this._addCurrentInput(); } });
+    inp.addEventListener("blur", () => setTimeout(() => this._hideSuggestions(), 200));
+    R.querySelector(".add-btn").addEventListener("click", () => this._addCurrentInput());
+    R.querySelector(".completed-header").addEventListener("click", e => {
+      if (e.target.closest(".clear-all-btn")) return;
       this._completedExpanded = !this._completedExpanded;
-      this._updateCompletedVisibility();
+      this._updateCompletedVis();
     });
-
-    root.querySelector(".clear-btn").addEventListener("click", (e) => {
+    R.querySelector(".clear-all-btn").addEventListener("click", e => {
       e.stopPropagation();
-      root.querySelector(".confirm-dialog").style.display = "flex";
+      R.querySelector(".confirm-bar").style.display = "flex";
     });
-    root.querySelector(".confirm-yes").addEventListener("click", () => {
-      root.querySelector(".confirm-dialog").style.display = "none";
+    R.querySelector(".btn-yes").addEventListener("click", () => {
+      R.querySelector(".confirm-bar").style.display = "none";
       this._clearCompleted();
     });
-    root.querySelector(".confirm-no").addEventListener("click", () => {
-      root.querySelector(".confirm-dialog").style.display = "none";
+    R.querySelector(".btn-no").addEventListener("click", () => {
+      R.querySelector(".confirm-bar").style.display = "none";
     });
   }
 
   _hideSuggestions() {
     this._suggestions = [];
-    const sg = this.shadowRoot.querySelector(".suggestions");
-    if (sg) sg.style.display = "none";
+    const s = this.shadowRoot.querySelector(".suggestions");
+    if (s) s.style.display = "none";
   }
-
-  /* ---------- update lists ---------- */
 
   _updateLists() {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    const active = this._sortItems(this._items.filter((i) => i.status === "needs_action"));
-    const completed = this._sortItems(this._items.filter((i) => i.status === "completed"));
-
-    root.querySelector(".active-count").textContent = active.length;
-    root.querySelector(".completed-count").textContent = completed.length;
-
-    const activeList = root.querySelector(".active-list");
-    if (active.length === 0) {
-      activeList.innerHTML = '<div class="empty">Lista zakupów jest pusta</div>';
+    const R = this.shadowRoot; if (!R) return;
+    const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
+    const completed = this._sortItems(this._items.filter(i => i.status === "completed"));
+    R.querySelector(".active-count").textContent = active.length;
+    R.querySelector(".completed-count").textContent = completed.length;
+    const aList = R.querySelector(".active-list");
+    if (!active.length) {
+      aList.innerHTML = '<div class="empty-msg">Lista jest pusta</div>';
     } else {
-      activeList.innerHTML = active.map((item) => this._renderActiveItem(item)).join("");
-      this._bindItemEvents(activeList, active, false);
+      aList.innerHTML = active.map(i => this._htmlActiveItem(i)).join("");
+      this._bindItemEvents(aList, active, false);
     }
-
-    const completedSection = root.querySelector(".completed-section");
-    completedSection.style.display = completed.length > 0 ? "" : "none";
-    const completedList = root.querySelector(".completed-list");
-    completedList.innerHTML = completed.map((item) => this._renderCompletedItem(item)).join("");
-    this._bindItemEvents(completedList, completed, true);
-    this._updateCompletedVisibility();
+    const cSec = R.querySelector(".completed-section");
+    cSec.style.display = completed.length ? "" : "none";
+    const cList = R.querySelector(".completed-list");
+    cList.innerHTML = completed.map(i => this._htmlCompletedItem(i)).join("");
+    this._bindItemEvents(cList, completed, true);
+    this._updateCompletedVis();
   }
 
-  _updateCompletedVisibility() {
-    const root = this.shadowRoot;
-    const list = root.querySelector(".completed-list");
-    const chevron = root.querySelector(".chevron");
-    if (list) list.style.display = this._completedExpanded ? "" : "none";
-    if (chevron) chevron.classList.toggle("open", this._completedExpanded);
+  _updateCompletedVis() {
+    const R = this.shadowRoot;
+    const l = R.querySelector(".completed-list"), ch = R.querySelector(".chevron");
+    if (l) l.style.display = this._completedExpanded ? "" : "none";
+    if (ch) ch.classList.toggle("open", this._completedExpanded);
   }
 
-  _renderActiveItem(item) {
-    const hasNote = item.notes ? "has-note" : "";
+  _htmlActiveItem(item) {
+    const hn = item.notes ? " has-note" : "";
+    const notePreview = item.notes
+      ? `<div class="note-preview" data-action="toggle-note">${esc(item.notes)}</div>` : "";
     return `
-      <div class="item-container" data-uid="${item.uid}">
-        <div class="item-row">
-          <div class="swipe-bg-right"><span class="swipe-icon">&#10003;</span></div>
-          <div class="swipe-bg-left"><span class="delete-btn-swipe">Usuń</span></div>
-          <div class="item" data-uid="${item.uid}">
-            <div class="checkbox" data-action="toggle"></div>
-            <span class="item-name" data-action="edit-name">${esc(item.name)}</span>
-            <div class="qty-controls">
-              <button class="qty-btn" data-action="qty-minus">&minus;</button>
-              <span class="qty-value" data-action="edit-qty">${item.quantity}</span>
-              <button class="qty-btn" data-action="qty-plus">+</button>
-            </div>
-            <button class="note-btn ${hasNote}" data-action="toggle-note" title="${esc(item.notes || "Dodaj notatkę")}">
-              <svg viewBox="0 0 24 24" width="18" height="18">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--secondary-text-color)"}" stroke-width="1.5"/>
-                <polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--secondary-text-color)"}" stroke-width="1.5"/>
-                <line x1="8" y1="13" x2="16" y2="13" stroke="${item.notes ? "var(--primary-color)" : "var(--secondary-text-color)"}" stroke-width="1.5"/>
-                <line x1="8" y1="17" x2="13" y2="17" stroke="${item.notes ? "var(--primary-color)" : "var(--secondary-text-color)"}" stroke-width="1.5"/>
-              </svg>
+    <div class="item-wrap" data-uid="${item.uid}">
+      <div class="swipe-row">
+        <div class="sw-bg sw-right"><svg viewBox="0 0 24 24" width="22" height="22"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="sw-bg sw-left"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+        <div class="item" data-uid="${item.uid}">
+          <div class="chk" data-action="toggle"><div class="chk-inner"></div></div>
+          <div class="item-body">
+            <div class="item-name" data-action="edit-name">${esc(item.name)}</div>
+            ${notePreview}
+          </div>
+          <div class="qty-pill">
+            <button class="qty-btn" data-action="qty-minus">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            </button>
+            <span class="qty-val" data-action="edit-qty">${item.quantity}</span>
+            <button class="qty-btn" data-action="qty-plus">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
             </button>
           </div>
+          <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/></svg>
+          </button>
         </div>
-        <div class="note-editor" style="display:none">
-          <textarea class="note-input" placeholder="Dodaj notatkę...">${esc(item.notes || "")}</textarea>
-          <div class="note-actions">
-            <button class="note-save-btn">Zapisz</button>
-            <span class="note-error" style="display:none"></span>
-          </div>
+      </div>
+      <div class="note-editor" style="display:none">
+        <textarea class="note-textarea" placeholder="Dodaj notatke...">${esc(item.notes || "")}</textarea>
+        <div class="note-bar">
+          <button class="note-save">Zapisz</button>
         </div>
-      </div>`;
+      </div>
+    </div>`;
   }
 
-  _renderCompletedItem(item) {
+  _htmlCompletedItem(item) {
     return `
-      <div class="item-container" data-uid="${item.uid}">
-        <div class="item-row">
-          <div class="item completed-item" data-uid="${item.uid}">
-            <div class="checkbox checked" data-action="toggle">
-              <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="4,12 10,18 20,6" fill="none" stroke="var(--text-primary-color,#fff)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
-            <span class="item-name completed-name">${esc(item.name)}</span>
-            <span class="completed-qty">${item.quantity > 1 ? item.quantity + " szt." : ""}</span>
-            <button class="delete-item-btn" data-action="delete" title="Usuń z listy">
-              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" fill="none" stroke="var(--error-color, #f44336)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
+    <div class="item-wrap" data-uid="${item.uid}">
+      <div class="swipe-row">
+        <div class="item completed-item" data-uid="${item.uid}">
+          <div class="chk chk-done" data-action="toggle">
+            <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
+          <div class="item-body">
+            <div class="item-name done-name">${esc(item.name)}</div>
+            ${item.notes ? `<div class="note-preview done-note">${esc(item.notes)}</div>` : ""}
+          </div>
+          ${item.quantity > 1 ? `<span class="done-qty">${item.quantity} szt.</span>` : ""}
+          <button class="icon-btn del-btn" data-action="delete" title="Usun z listy">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="var(--error-color,#e53935)" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </button>
         </div>
-      </div>`;
+      </div>
+    </div>`;
   }
 
-  /* ---------- item event binding ---------- */
+  /* ---------- item events ---------- */
 
   _bindItemEvents(container, items, isCompleted) {
-    container.querySelectorAll(".item-container").forEach((el) => {
+    container.querySelectorAll(".item-wrap").forEach(el => {
       const uid = el.dataset.uid;
-      const item = items.find((i) => i.uid === uid);
+      const item = items.find(i => i.uid === uid);
       if (!item) return;
 
-      const itemRow = el.querySelector(".item-row");
-      itemRow.addEventListener("click", (e) => {
-        const action = e.target.closest("[data-action]");
-        if (!action) return;
+      el.querySelector(".swipe-row").addEventListener("click", e => {
+        const a = e.target.closest("[data-action]");
+        if (!a) { if (isCompleted) this._toggleComplete(item); return; }
         e.stopPropagation();
-        switch (action.dataset.action) {
-          case "toggle":
-            this._toggleComplete(item);
-            break;
-          case "edit-name":
-            if (!isCompleted) this._startEditName(el, item);
-            else this._toggleComplete(item);
-            break;
-          case "qty-minus":
-            this._updateQuantity(item, item.quantity - 1);
-            break;
-          case "qty-plus":
-            this._updateQuantity(item, item.quantity + 1);
-            break;
-          case "edit-qty":
-            this._startEditQty(el, item);
-            break;
-          case "toggle-note":
-            this._toggleNoteEditor(el, item);
-            break;
-          case "delete":
-            this._removeItem(item);
-            break;
+        switch (a.dataset.action) {
+          case "toggle": this._toggleComplete(item); break;
+          case "edit-name": if (!isCompleted) this._startEditName(el, item); else this._toggleComplete(item); break;
+          case "qty-minus": this._updateQuantity(item, item.quantity - 1); break;
+          case "qty-plus": this._updateQuantity(item, item.quantity + 1); break;
+          case "edit-qty": this._startEditQty(el, item); break;
+          case "toggle-note": this._toggleNoteEditor(el, item); break;
+          case "delete": this._removeItem(item); break;
         }
       });
 
-      if (isCompleted) {
-        el.querySelector(".completed-item").addEventListener("click", (e) => {
-          if (!e.target.closest("[data-action]")) this._toggleComplete(item);
-        });
-      }
-
-      // Swipe delete button (active items only — completed items have explicit delete btn)
-      el.querySelectorAll(".delete-btn-swipe").forEach((btn) => {
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this._removeItem(item);
-        });
-      });
-
-      // Touch swipe (active items have right-swipe-to-complete + left-swipe-to-delete)
+      // Pointer-based swipe (works on both touch and mouse)
       const itemEl = el.querySelector(".item");
-      let touchState = null;
-      let swipeOffset = 0;
+      let ts = null, off = 0;
 
-      itemEl.addEventListener("touchstart", (e) => {
-        const touch = e.touches[0];
-        touchState = { startX: touch.clientX, startY: touch.clientY, dir: null };
-        swipeOffset = 0;
-        container.querySelectorAll(".item").forEach((other) => {
-          if (other !== itemEl) other.style.transform = "";
-        });
-      }, { passive: true });
+      itemEl.addEventListener("pointerdown", e => {
+        if (e.button !== 0) return;
+        ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
+        off = 0;
+        container.querySelectorAll(".item").forEach(o => { if (o !== itemEl) o.style.transform = ""; });
+      });
 
-      itemEl.addEventListener("touchmove", (e) => {
-        if (!touchState) return;
-        const touch = e.touches[0];
-        const dx = touch.clientX - touchState.startX;
-        const dy = touch.clientY - touchState.startY;
-        if (!touchState.dir) {
-          if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-            touchState.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-          }
+      itemEl.addEventListener("pointermove", e => {
+        if (!ts || ts.id !== e.pointerId) return;
+        const dx = e.clientX - ts.x, dy = e.clientY - ts.y;
+        if (!ts.dir) {
+          if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+            ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+            if (ts.dir === "h") {
+              try { itemEl.setPointerCapture(e.pointerId); } catch(_) {}
+            } else { ts = null; return; }
+          } else return;
         }
-        if (touchState.dir === "h") {
-          e.preventDefault();
-          swipeOffset = isCompleted ? Math.min(0, dx) : dx;
+        if (ts.dir === "h") {
+          off = isCompleted ? Math.min(0, dx) : dx;
           itemEl.style.transition = "none";
-          itemEl.style.transform = `translateX(${swipeOffset}px)`;
+          itemEl.style.transform = `translateX(${off}px)`;
         }
-      }, { passive: false });
+      });
 
-      itemEl.addEventListener("touchend", () => {
-        if (!touchState) return;
+      const endSwipe = () => {
+        if (!ts) return;
         itemEl.style.transition = "transform 0.25s ease";
-        if (swipeOffset > 80 && !isCompleted) {
-          itemEl.style.transform = "";
-          this._toggleComplete(item);
-        } else if (swipeOffset < -80) {
-          itemEl.style.transform = "translateX(-80px)";
-        } else {
-          itemEl.style.transform = "";
-        }
-        touchState = null;
-      }, { passive: true });
+        if (off > 80 && !isCompleted) { itemEl.style.transform = ""; this._toggleComplete(item); }
+        else if (off < -80) { itemEl.style.transform = "translateX(-80px)"; }
+        else { itemEl.style.transform = ""; }
+        ts = null;
+      };
+      itemEl.addEventListener("pointerup", endSwipe);
+      itemEl.addEventListener("pointercancel", () => {
+        if (ts) { itemEl.style.transition = "transform 0.25s ease"; itemEl.style.transform = ""; ts = null; }
+      });
     });
   }
 
   /* ---------- inline editors ---------- */
 
-  _startEditName(container, item) {
-    const nameEl = container.querySelector(".item-name");
-    if (!nameEl) return;
-    const input = document.createElement("input");
-    input.className = "name-edit";
-    input.type = "text";
-    input.value = item.name;
-    nameEl.replaceWith(input);
-    input.focus();
-    input.select();
-    let saved = false;
-    const save = () => {
-      if (saved) return;
-      saved = true;
-      const name = input.value.trim();
-      if (name && name !== item.name) {
-        this._updateName(item, name);
-      } else {
-        this._updateLists();
-      }
-    };
-    input.addEventListener("blur", save);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") input.blur();
-      if (e.key === "Escape") { saved = true; this._updateLists(); }
-    });
+  _startEditName(wrap, item) {
+    const el = wrap.querySelector(".item-name"); if (!el) return;
+    const inp = document.createElement("input");
+    inp.className = "inline-edit"; inp.type = "text"; inp.value = item.name;
+    el.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const save = () => { if (done) return; done = true; const v = inp.value.trim();
+      if (v && v !== item.name) this._updateName(item, v); else this._updateLists(); };
+    inp.addEventListener("blur", save);
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); if (e.key === "Escape") { done = true; this._updateLists(); } });
   }
 
-  _startEditQty(container, item) {
-    const qtyEl = container.querySelector(".qty-value");
-    if (!qtyEl) return;
-    const input = document.createElement("input");
-    input.className = "qty-input";
-    input.type = "number";
-    input.min = "1";
-    input.value = String(item.quantity);
-    qtyEl.replaceWith(input);
-    input.focus();
-    input.select();
-    let saved = false;
-    const save = () => {
-      if (saved) return;
-      saved = true;
-      const q = parseInt(input.value, 10);
-      if (!isNaN(q) && q >= 1) {
-        this._updateQuantity(item, q);
-      } else {
-        this._updateLists();
-      }
-    };
-    input.addEventListener("blur", save);
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") input.blur();
-    });
+  _startEditQty(wrap, item) {
+    const el = wrap.querySelector(".qty-val"); if (!el) return;
+    const inp = document.createElement("input");
+    inp.className = "inline-edit qty-edit"; inp.type = "number"; inp.min = "1"; inp.value = String(item.quantity);
+    el.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const save = () => { if (done) return; done = true; const q = parseInt(inp.value, 10);
+      if (!isNaN(q) && q >= 1) this._updateQuantity(item, q); else this._updateLists(); };
+    inp.addEventListener("blur", save);
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
   }
 
-  _toggleNoteEditor(container, item) {
-    const editor = container.querySelector(".note-editor");
-    if (!editor) return;
-    const isOpen = editor.style.display !== "none";
-    editor.style.display = isOpen ? "none" : "";
-    if (!isOpen) {
-      const textarea = editor.querySelector(".note-input");
-      const errorEl = editor.querySelector(".note-error");
-      textarea.focus();
-      if (errorEl) errorEl.style.display = "none";
-
+  _toggleNoteEditor(wrap, item) {
+    const ed = wrap.querySelector(".note-editor"); if (!ed) return;
+    const open = ed.style.display !== "none";
+    ed.style.display = open ? "none" : "";
+    if (!open) {
+      const ta = ed.querySelector(".note-textarea");
+      ta.focus();
       const save = () => {
-        const notes = textarea.value;
-        if (notes !== (item.notes || "")) {
-          this._updateNotes(item, notes);
-        } else {
-          editor.style.display = "none";
-        }
+        const v = ta.value;
+        if (v !== (item.notes || "")) this._updateNotes(item, v);
+        else ed.style.display = "none";
       };
-
-      // Replace save button to avoid duplicate listeners on re-open
-      const oldBtn = editor.querySelector(".note-save-btn");
-      const newBtn = oldBtn.cloneNode(true);
-      oldBtn.replaceWith(newBtn);
-      newBtn.addEventListener("click", () => save());
-
-      // Enter to save (Shift+Enter for newline)
-      textarea.onkeydown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          save();
-        }
-      };
+      const btn = ed.querySelector(".note-save");
+      const nb = btn.cloneNode(true); btn.replaceWith(nb);
+      nb.addEventListener("click", save);
+      ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } };
     }
   }
 
@@ -635,273 +475,252 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _updateSuggestions() {
     const q = (this._inputValue || "").trim();
-    const sgContainer = this.shadowRoot.querySelector(".suggestions");
+    const box = this.shadowRoot.querySelector(".suggestions");
     if (q.length < 2) { this._hideSuggestions(); return; }
-    const scored = this._items
-      .map((item) => ({ item, score: fuzzyScore(q, item.name) }))
-      .filter((s) => s.score > 0)
-      .sort((a, b) => b.score - a.score);
-    const seen = new Set();
-    const unique = [];
-    for (const s of scored) {
-      const key = s.item.name.toLowerCase();
-      if (!seen.has(key)) { seen.add(key); unique.push(s); }
-    }
-    this._suggestions = unique.slice(0, 5);
-    if (this._suggestions.length === 0) { sgContainer.style.display = "none"; return; }
-    sgContainer.style.display = "";
-    sgContainer.innerHTML = this._suggestions.map((s) => {
-      const onList = s.item.status === "needs_action";
-      const badge = onList
-        ? `<span class="badge">na liście: ${s.item.quantity} szt.</span>`
-        : `<span class="badge inactive">kupione</span>`;
-      return `<div class="suggestion" data-uid="${s.item.uid}">
-        <span class="suggestion-name">${esc(s.item.name)}</span>${badge}
-      </div>`;
+    const scored = this._items.map(i => ({ i, s: fuzzyScore(q, i.name) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
+    const seen = new Set(), uniq = [];
+    for (const x of scored) { const k = x.i.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); uniq.push(x); } }
+    this._suggestions = uniq.slice(0, 5);
+    if (!this._suggestions.length) { box.style.display = "none"; return; }
+    box.style.display = "";
+    box.innerHTML = this._suggestions.map(x => {
+      const on = x.i.status === "needs_action";
+      const badge = on ? `<span class="sg-badge">${x.i.quantity} szt.</span>` : `<span class="sg-badge sg-done">kupione</span>`;
+      return `<div class="sg-item" data-uid="${x.i.uid}"><span class="sg-name">${esc(x.i.name)}</span>${badge}</div>`;
     }).join("");
-    sgContainer.querySelectorAll(".suggestion").forEach((el) => {
-      el.addEventListener("mousedown", (e) => {
+    box.querySelectorAll(".sg-item").forEach(el => {
+      el.addEventListener("mousedown", e => {
         e.preventDefault();
-        const uid = el.dataset.uid;
-        const item = this._items.find((i) => i.uid === uid);
-        if (item) this._selectSuggestion(item);
+        const it = this._items.find(i => i.uid === el.dataset.uid);
+        if (it) this._selectSuggestion(it);
       });
     });
   }
 
   async _selectSuggestion(item) {
-    if (item.status === "needs_action") {
-      this._updateQuantity(item, item.quantity + 1);
-    } else {
-      await this._callService("update_item", { item: item.uid, status: "needs_action" });
-      await this._fetchItems();
-    }
+    if (item.status === "needs_action") this._updateQuantity(item, item.quantity + 1);
+    else { await this._callService("update_item", { item: item.uid, status: "needs_action" }); await this._fetchItems(); }
     this._inputValue = "";
-    const input = this.shadowRoot.querySelector(".add-input");
-    if (input) input.value = "";
+    const inp = this.shadowRoot.querySelector(".add-input");
+    if (inp) inp.value = "";
     this._hideSuggestions();
   }
 
-  /* ---------- styles ---------- */
+  /* ---------- CSS ---------- */
 
-  static get cardStyles() {
+  static get CSS() {
     return `
-      :host { --esl-radius: 8px; --esl-item-height: 44px; }
+      :host { --R: 12px; }
       ha-card { overflow: hidden; }
-      .card-header { padding: 16px 16px 0; font-size: 18px; font-weight: 500; color: var(--primary-text-color); }
-      .card-content { padding: 12px 16px 16px; }
+      .header { padding: 16px 16px 4px; font-size: 20px; font-weight: 600; color: var(--primary-text-color); }
+      .content { padding: 8px 16px 16px; }
 
-      /* Add input row */
-      .add-section { position: relative; margin-bottom: 16px; }
-      .input-row { display: flex; align-items: center; gap: 8px; }
+      /* --- add --- */
+      .add-section { position: relative; margin-bottom: 14px; }
+      .input-row { display: flex; align-items: center; gap: 10px; }
       .add-input {
-        flex: 1; box-sizing: border-box; padding: 10px 12px;
-        border: 1px solid var(--divider-color, #e0e0e0); border-radius: var(--esl-radius);
-        background: var(--card-background-color, #fff); color: var(--primary-text-color);
-        font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s;
+        flex:1; padding: 11px 14px; border: 1.5px solid var(--divider-color,#ddd); border-radius: var(--R);
+        background: var(--card-background-color,#fff); color: var(--primary-text-color);
+        font-size: 15px; font-family: inherit; outline: none; transition: border-color .2s;
       }
       .add-input:focus { border-color: var(--primary-color); }
-      .add-input::placeholder { color: var(--secondary-text-color); opacity: 0.7; }
+      .add-input::placeholder { color: var(--secondary-text-color); opacity: .6; }
       .add-btn {
-        background: none; border: none; padding: 0; cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%;
-        transition: transform 0.15s;
+        background: none; border: none; padding: 0; cursor: pointer; display: flex;
+        align-items: center; justify-content: center; width: 40px; height: 40px;
+        flex-shrink: 0; border-radius: 50%; transition: transform .15s;
       }
-      .add-btn:hover { transform: scale(1.1); }
-      .add-btn:active { transform: scale(0.95); }
+      .add-btn:hover { transform: scale(1.08); }
+      .add-btn:active { transform: scale(.92); }
 
-      /* Suggestions */
+      /* --- suggestions --- */
       .suggestions {
         position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
-        background: var(--card-background-color, #fff);
-        border: 1px solid var(--divider-color, #e0e0e0); border-top: none;
-        border-radius: 0 0 var(--esl-radius) var(--esl-radius);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow: hidden;
+        background: var(--card-background-color,#fff);
+        border: 1px solid var(--divider-color,#ddd); border-top: none;
+        border-radius: 0 0 var(--R) var(--R);
+        box-shadow: 0 6px 16px rgba(0,0,0,.12); overflow: hidden;
       }
-      .suggestion {
-        padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-        font-size: 14px; color: var(--primary-text-color); transition: background 0.15s;
+      .sg-item {
+        padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+        font-size: 14px; transition: background .12s;
       }
-      .suggestion:hover { background: var(--secondary-background-color, #f5f5f5); }
-      .suggestion-name { flex: 1; }
-      .badge {
+      .sg-item:hover { background: var(--secondary-background-color,#f5f5f5); }
+      .sg-name { flex: 1; }
+      .sg-badge {
         font-size: 11px; padding: 2px 8px; border-radius: 10px;
-        background: var(--primary-color); color: var(--text-primary-color, #fff); white-space: nowrap;
+        background: var(--primary-color); color: #fff; white-space: nowrap;
       }
-      .badge.inactive { background: var(--secondary-text-color); opacity: 0.6; }
+      .sg-done { background: var(--disabled-text-color,#999); }
 
-      /* Section */
-      .section { margin-bottom: 12px; }
-      .section-header {
-        font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-        color: var(--secondary-text-color); padding: 8px 0 6px;
+      /* --- sections --- */
+      .section { margin-bottom: 8px; }
+      .section-title {
+        font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
+        color: var(--secondary-text-color); padding: 10px 0 6px; display: flex; align-items: center; gap: 6px;
       }
-      .empty { padding: 20px 0; text-align: center; color: var(--secondary-text-color); font-size: 14px; opacity: 0.7; }
+      .badge-count {
+        display: inline-flex; align-items: center; justify-content: center;
+        min-width: 20px; height: 20px; border-radius: 10px; padding: 0 6px;
+        font-size: 11px; font-weight: 700; background: var(--primary-color); color: #fff;
+      }
+      .empty-msg { padding: 24px 0; text-align: center; color: var(--secondary-text-color); font-size: 14px; opacity: .6; }
 
-      /* Item container */
-      .item-container { border-radius: var(--esl-radius); margin-bottom: 4px; }
-      .item-row { position: relative; overflow: hidden; border-radius: var(--esl-radius); }
-      .swipe-bg-right {
-        position: absolute; top:0; left:0; bottom:0; width:100%;
-        background: #4caf50; display: flex; align-items: center; padding-left: 16px; color: white; font-weight: bold;
+      /* --- item --- */
+      .item-wrap { border-radius: var(--R); margin-bottom: 6px; overflow: hidden; background: var(--secondary-background-color, rgba(0,0,0,.03)); }
+      .swipe-row { position: relative; overflow: hidden; border-radius: var(--R); }
+      .sw-bg {
+        position: absolute; top: 0; bottom: 0; width: 100%;
+        display: flex; align-items: center;
       }
-      .swipe-bg-left {
-        position: absolute; top:0; right:0; bottom:0; width:100%;
-        background: #f44336; display: flex; align-items: center; justify-content: flex-end;
-      }
-      .swipe-icon { font-size: 20px; }
-      .delete-btn-swipe {
-        display: flex; align-items: center; justify-content: center;
-        width: 80px; height: 100%; color: white; font-weight: 600; font-size: 13px; cursor: pointer;
-      }
+      .sw-right { left: 0; background: #43a047; padding-left: 18px; }
+      .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; }
       .item {
-        position: relative; display: flex; align-items: center; gap: 8px; padding: 8px;
-        background: var(--card-background-color, #fff); min-height: var(--esl-item-height);
-        z-index: 1; touch-action: pan-y; transition: transform 0.25s ease;
+        position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+        background: var(--card-background-color,#fff); min-height: 48px;
+        z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: default;
       }
 
-      /* Checkbox */
-      .checkbox {
-        width: 22px; height: 22px; min-width: 22px; border-radius: 50%;
-        border: 2px solid var(--divider-color, #bdbdbd); cursor: pointer;
+      /* --- checkbox --- */
+      .chk {
+        width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
+        border: 2.5px solid var(--divider-color,#ccc); cursor: pointer;
         display: flex; align-items: center; justify-content: center;
-        transition: border-color 0.2s, background 0.2s; flex-shrink: 0;
+        transition: all .2s; flex-shrink: 0;
       }
-      .checkbox:hover { border-color: var(--primary-color); }
-      .checkbox.checked { border-color: var(--primary-color); background: var(--primary-color); opacity: 0.7; }
+      .chk:hover { border-color: var(--primary-color); transform: scale(1.1); }
+      .chk-inner {
+        width: 0; height: 0; border-radius: 50%;
+        background: var(--primary-color); transition: all .2s;
+      }
+      .chk:hover .chk-inner { width: 10px; height: 10px; }
+      .chk-done {
+        border-color: var(--primary-color); background: var(--primary-color);
+      }
 
-      /* Name */
+      /* --- item body --- */
+      .item-body { flex: 1; min-width: 0; }
       .item-name {
-        flex: 1; font-size: 14px; color: var(--primary-text-color); cursor: pointer; min-width: 0;
+        font-size: 15px; color: var(--primary-text-color); cursor: pointer;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
-      .name-edit {
-        flex: 1; font-size: 14px; border: 1px solid var(--primary-color); border-radius: 4px;
-        padding: 4px 6px; background: var(--card-background-color, #fff); color: var(--primary-text-color);
-        font-family: inherit; outline: none; min-width: 0;
+      .note-preview {
+        font-size: 12px; color: var(--secondary-text-color); margin-top: 2px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
       }
-      .completed-name { text-decoration: line-through; opacity: 0.6; }
-      .completed-item { cursor: pointer; }
-      .completed-qty { font-size: 12px; color: var(--secondary-text-color); opacity: 0.8; white-space: nowrap; }
+      .done-name { text-decoration: line-through; opacity: .5; }
+      .done-note { opacity: .4; }
+      .done-qty { font-size: 12px; color: var(--secondary-text-color); opacity: .6; white-space: nowrap; margin-right: 4px; }
+      .completed-item { opacity: .7; }
 
-      /* Quantity */
-      .qty-controls { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+      /* --- quantity pill --- */
+      .qty-pill {
+        display: flex; align-items: center; gap: 0;
+        border: 1.5px solid var(--divider-color,#ddd); border-radius: 20px;
+        overflow: hidden; flex-shrink: 0; background: var(--card-background-color,#fff);
+      }
       .qty-btn {
-        width: 26px; height: 26px; border-radius: 50%;
-        border: 1px solid var(--divider-color, #e0e0e0);
-        background: var(--secondary-background-color, #f5f5f5);
-        color: var(--primary-text-color); font-size: 16px; font-weight: 500;
-        cursor: pointer; display: flex; align-items: center; justify-content: center;
-        padding: 0; line-height: 1; transition: background 0.15s;
+        width: 32px; height: 32px; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; padding: 0;
+        background: var(--secondary-background-color,#f5f5f5);
+        color: var(--primary-text-color); transition: all .12s;
       }
-      .qty-btn:hover { background: var(--divider-color, #e0e0e0); }
-      .qty-btn:active { background: var(--primary-color); color: var(--text-primary-color, #fff); border-color: var(--primary-color); }
-      .qty-value {
-        min-width: 24px; text-align: center; font-size: 14px; font-weight: 500;
-        cursor: pointer; color: var(--primary-text-color);
+      .qty-btn:hover { background: var(--divider-color,#e0e0e0); }
+      .qty-btn:active { background: var(--primary-color); color: #fff; }
+      .qty-val {
+        min-width: 28px; text-align: center; font-size: 15px; font-weight: 600;
+        cursor: pointer; color: var(--primary-text-color); padding: 0 2px;
+        user-select: none;
       }
-      .qty-input {
-        width: 40px; text-align: center; font-size: 14px;
-        border: 1px solid var(--primary-color); border-radius: 4px; padding: 2px;
-        background: var(--card-background-color, #fff); color: var(--primary-text-color);
-        font-family: inherit; outline: none; -moz-appearance: textfield;
-      }
-      .qty-input::-webkit-inner-spin-button, .qty-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-      /* Note button */
-      .note-btn {
-        background: none; border: none; padding: 4px; cursor: pointer;
+      /* --- icon buttons --- */
+      .icon-btn {
+        background: none; border: none; padding: 6px; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
-        border-radius: 4px; transition: background 0.15s; flex-shrink: 0;
+        border-radius: 8px; transition: background .12s; flex-shrink: 0;
+        opacity: .4;
       }
-      .note-btn:hover { background: var(--secondary-background-color, #f5f5f5); }
-      .note-btn.has-note svg { opacity: 1; }
-      .note-btn:not(.has-note) svg { opacity: 0.4; }
+      .icon-btn:hover { background: var(--secondary-background-color,#f0f0f0); opacity: .8; }
+      .icon-btn.has-note { opacity: 1; }
+      .del-btn { opacity: .5; }
+      .del-btn:hover { background: rgba(229,57,53,.1); opacity: 1; }
 
-      /* Note editor */
+      /* --- inline edit --- */
+      .inline-edit {
+        font-size: 15px; border: 1.5px solid var(--primary-color); border-radius: 6px;
+        padding: 4px 8px; background: var(--card-background-color,#fff); color: var(--primary-text-color);
+        font-family: inherit; outline: none; width: 100%; box-sizing: border-box;
+      }
+      .qty-edit { width: 48px; text-align: center; -moz-appearance: textfield; }
+      .qty-edit::-webkit-inner-spin-button, .qty-edit::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+      /* --- note editor --- */
       .note-editor {
-        padding: 4px 8px 8px 38px;
-        background: var(--card-background-color, #fff);
-        border-radius: 0 0 var(--esl-radius) var(--esl-radius);
+        padding: 6px 12px 10px 48px;
+        background: var(--card-background-color,#fff);
       }
-      .note-input {
-        width: 100%; box-sizing: border-box; padding: 6px 8px;
-        border: 1px solid var(--divider-color, #e0e0e0); border-radius: 4px;
-        background: var(--secondary-background-color, #f5f5f5); color: var(--primary-text-color);
+      .note-textarea {
+        width: 100%; box-sizing: border-box; padding: 8px 10px;
+        border: 1.5px solid var(--divider-color,#ddd); border-radius: 8px;
+        background: var(--secondary-background-color,#f8f8f8); color: var(--primary-text-color);
         font-size: 13px; font-family: inherit; outline: none;
-        resize: vertical; min-height: 36px; max-height: 100px; transition: border-color 0.2s;
+        resize: vertical; min-height: 40px; max-height: 120px; transition: border-color .2s;
       }
-      .note-input:focus { border-color: var(--primary-color); }
-      .note-actions {
-        display: flex; align-items: center; gap: 8px; margin-top: 6px;
+      .note-textarea:focus { border-color: var(--primary-color); }
+      .note-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+      .note-save {
+        padding: 6px 16px; border-radius: 8px; border: none; font-size: 13px;
+        cursor: pointer; font-weight: 600;
+        background: var(--primary-color); color: #fff; transition: opacity .15s;
       }
-      .note-save-btn {
-        padding: 4px 14px; border-radius: 4px; border: none; font-size: 13px;
-        cursor: pointer; font-weight: 500;
-        background: var(--primary-color); color: var(--text-primary-color, #fff);
-        transition: opacity 0.15s;
-      }
-      .note-save-btn:hover { opacity: 0.85; }
-      .note-error {
-        font-size: 12px; color: var(--error-color, #f44336);
-      }
+      .note-save:hover { opacity: .85; }
 
-      /* Delete button for completed items */
-      .delete-item-btn {
-        background: none; border: none; padding: 4px; cursor: pointer;
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 4px; transition: background 0.15s; flex-shrink: 0; opacity: 0.7;
+      /* --- completed section --- */
+      .completed-header {
+        display: flex; align-items: center; justify-content: space-between;
+        cursor: pointer; user-select: none;
       }
-      .delete-item-btn:hover { background: rgba(244,67,54,0.1); opacity: 1; }
-
-      /* Completed */
-      .completed-header { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
-      .chevron { display: inline-block; font-size: 10px; transition: transform 0.25s; margin-left: 4px; }
+      .chevron { display: inline-block; font-size: 10px; transition: transform .25s; margin-left: 4px; }
       .chevron.open { transform: rotate(180deg); }
-      .clear-btn {
-        background: none; border: none; padding: 4px 6px; cursor: pointer; border-radius: 4px;
-        display: flex; align-items: center; transition: background 0.15s; color: var(--secondary-text-color);
+      .clear-all-btn {
+        background: none; border: none; padding: 6px; cursor: pointer; border-radius: 8px;
+        display: flex; align-items: center; transition: background .12s; color: var(--secondary-text-color);
       }
-      .clear-btn:hover { background: var(--secondary-background-color, #f5f5f5); }
-
-      /* Confirm dialog */
-      .confirm-dialog {
-        display: flex; align-items: center; gap: 8px; padding: 8px;
-        background: var(--secondary-background-color, #f5f5f5); border-radius: var(--esl-radius);
-        margin-bottom: 8px; font-size: 13px; color: var(--primary-text-color);
+      .clear-all-btn:hover { background: var(--secondary-background-color,#f0f0f0); }
+      .confirm-bar {
+        display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+        background: var(--secondary-background-color,#f5f5f5); border-radius: var(--R);
+        margin-bottom: 8px; font-size: 13px;
       }
-      .confirm-dialog span { flex: 1; }
-      .confirm-yes, .confirm-no { padding: 4px 12px; border-radius: 4px; border: none; font-size: 13px; cursor: pointer; font-weight: 500; }
-      .confirm-yes { background: #f44336; color: white; }
-      .confirm-no { background: var(--divider-color, #e0e0e0); color: var(--primary-text-color); }
+      .confirm-bar span { flex: 1; }
+      .btn-yes, .btn-no {
+        padding: 6px 14px; border-radius: 8px; border: none; font-size: 13px;
+        cursor: pointer; font-weight: 600;
+      }
+      .btn-yes { background: #e53935; color: #fff; }
+      .btn-no { background: var(--divider-color,#ddd); color: var(--primary-text-color); }
 
-      .completed-list { animation: fadeIn 0.2s ease; }
-      @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+      .completed-list { animation: fadeIn .2s ease; }
+      @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
 
       @media (max-width: 400px) {
-        .card-content { padding: 8px 12px 12px; }
-        .item { gap: 6px; padding: 6px; }
-        .qty-btn { width: 24px; height: 24px; font-size: 14px; }
+        .content { padding: 6px 10px 12px; }
+        .item { gap: 8px; padding: 8px 10px; }
+        .qty-btn { width: 28px; height: 28px; }
       }
     `;
   }
 }
 
 /* ------------------------------------------------------------------ */
-/*  Card config editor (NO Shadow DOM — ha-entity-picker needs light DOM) */
+/*  Editor — plain <select> for entity (works everywhere)              */
 /* ------------------------------------------------------------------ */
 class EnhancedShoppingListCardEditor extends HTMLElement {
-  constructor() {
-    super();
-    this._config = {};
-    this._hass = null;
-  }
+  constructor() { super(); this._config = {}; this._hass = null; }
 
   set hass(hass) {
     this._hass = hass;
-    const picker = this.querySelector("ha-entity-picker");
-    if (picker) picker.hass = hass;
+    this._populateEntities();
   }
 
   setConfig(config) {
@@ -909,80 +728,59 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     this._render();
   }
 
+  _populateEntities() {
+    const sel = this.querySelector("#esl-entity");
+    if (!sel || !this._hass) return;
+    const ents = Object.keys(this._hass.states).filter(e => e.startsWith("todo.")).sort();
+    const cur = this._config.entity || "";
+    sel.innerHTML = '<option value="">-- Wybierz encje todo --</option>' +
+      ents.map(e => {
+        const fn = this._hass.states[e].attributes.friendly_name || e;
+        return `<option value="${e}"${e === cur ? " selected" : ""}>${fn} (${e})</option>`;
+      }).join("");
+  }
+
   _render() {
     this.innerHTML = `
       <style>
-        .esl-editor { padding: 16px; }
-        .esl-editor .row { margin-bottom: 16px; }
-        .esl-editor label {
-          display: block; margin-bottom: 4px; font-size: 14px; font-weight: 500;
-          color: var(--primary-text-color);
-        }
-        .esl-editor input[type="text"], .esl-editor select {
-          width: 100%; box-sizing: border-box; padding: 8px;
-          border: 1px solid var(--divider-color); border-radius: 4px;
-          background: var(--card-background-color); color: var(--primary-text-color);
+        .esl-ed { padding: 16px; }
+        .esl-ed .row { margin-bottom: 14px; }
+        .esl-ed label { display: block; margin-bottom: 4px; font-size: 14px; font-weight: 600; color: var(--primary-text-color); }
+        .esl-ed select, .esl-ed input[type="text"] {
+          width: 100%; box-sizing: border-box; padding: 10px 12px;
+          border: 1.5px solid var(--divider-color,#ddd); border-radius: 10px;
+          background: var(--card-background-color,#fff); color: var(--primary-text-color);
           font-family: inherit; font-size: 14px;
         }
       </style>
-      <div class="esl-editor">
-        <div class="row" id="picker-row"></div>
+      <div class="esl-ed">
         <div class="row">
-          <label>Tytuł karty</label>
-          <input type="text" id="esl-title"
-            value="${(this._config.title || "").replace(/"/g, "&quot;")}"
-            placeholder="Lista zakupów" />
+          <label>Lista todo (entity)</label>
+          <select id="esl-entity"><option value="">-- Wybierz encje todo --</option></select>
+        </div>
+        <div class="row">
+          <label>Tytul karty</label>
+          <input type="text" id="esl-title" value="${(this._config.title || "").replace(/"/g, "&quot;")}" placeholder="Lista zakupow" />
         </div>
         <div class="row">
           <label>Sortowanie</label>
           <select id="esl-sort">
-            <option value="manual"${this._config.sort_by === "manual" || !this._config.sort_by ? " selected" : ""}>Kolejność dodania</option>
+            <option value="manual"${!this._config.sort_by || this._config.sort_by === "manual" ? " selected" : ""}>Kolejnosc dodania</option>
             <option value="alphabetical"${this._config.sort_by === "alphabetical" ? " selected" : ""}>Alfabetycznie</option>
           </select>
         </div>
-      </div>
-    `;
-
-    const pickerRow = this.querySelector("#picker-row");
-    const label = document.createElement("label");
-    label.textContent = "Lista todo";
-    pickerRow.appendChild(label);
-
-    const picker = document.createElement("ha-entity-picker");
-    picker.hass = this._hass;
-    picker.value = this._config.entity || "";
-    picker.includeDomains = ["todo"];
-    picker.required = true;
-    picker.addEventListener("value-changed", (e) => {
-      this._config = { ...this._config, entity: e.detail.value };
-      this._fireChanged();
-    });
-    pickerRow.appendChild(picker);
-
-    this.querySelector("#esl-title").addEventListener("input", (e) => {
-      this._config = { ...this._config, title: e.target.value };
-      this._fireChanged();
-    });
-
-    this.querySelector("#esl-sort").addEventListener("change", (e) => {
-      this._config = { ...this._config, sort_by: e.target.value };
-      this._fireChanged();
-    });
+      </div>`;
+    this._populateEntities();
+    this.querySelector("#esl-entity").addEventListener("change", e => { this._config = { ...this._config, entity: e.target.value }; this._fire(); });
+    this.querySelector("#esl-title").addEventListener("input", e => { this._config = { ...this._config, title: e.target.value }; this._fire(); });
+    this.querySelector("#esl-sort").addEventListener("change", e => { this._config = { ...this._config, sort_by: e.target.value }; this._fire(); });
   }
 
-  _fireChanged() {
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this._config },
-        bubbles: true,
-        composed: true,
-      })
-    );
+  _fire() {
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
   }
 }
 
-/* ------------------------------------------------------------------ */
-/*  Register                                                           */
 /* ------------------------------------------------------------------ */
 customElements.define("enhanced-shopping-list-card", EnhancedShoppingListCard);
 customElements.define("enhanced-shopping-list-card-editor", EnhancedShoppingListCardEditor);
@@ -991,12 +789,12 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "enhanced-shopping-list-card",
   name: "Enhanced Shopping List",
-  description: "Rozbudowana lista zakupów z ilościami, notatkami i fuzzy search — działa z natywną listą todo HA",
+  description: "Rozbudowana lista zakupow z ilosciami, notatkami i fuzzy search",
   preview: false,
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.2.0 ",
-  "background:#4CAF50;color:white;font-weight:bold;",
-  "background:#333;color:white;"
+  "%c ENHANCED-SHOPPING-LIST %c v2.3.0 ",
+  "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
+  "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
