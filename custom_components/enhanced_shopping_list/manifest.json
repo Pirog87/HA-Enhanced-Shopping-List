@@ -3,7 +3,7 @@
   "name": "Enhanced Shopping List",
   "codeowners": [],
   "config_flow": false,
-  "documentation": "https://github.com/Pirog87/HA-Shopping-List",
+  "documentation": "https://github.com/Pirog87/HA-Enhanced-Shopping-List",
   "integration_type": "service",
   "iot_class": "local_push",
   "version": "1.0.0"
