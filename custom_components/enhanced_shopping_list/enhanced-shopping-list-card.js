@@ -315,13 +315,13 @@ class EnhancedShoppingListCard extends HTMLElement {
             <div class="item-name" data-action="edit-name">${esc(item.name)}</div>
             ${notePreview}
           </div>
-          <div class="qty-pill">
+          <div class="qty-area">
             <button class="qty-btn" data-action="qty-minus">
-              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
             </button>
             <span class="qty-val" data-action="edit-qty">${item.quantity}</span>
             <button class="qty-btn" data-action="qty-plus">
-              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
             </button>
           </div>
           <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
@@ -567,7 +567,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       .empty-msg { padding: 24px 0; text-align: center; color: var(--secondary-text-color); font-size: 14px; opacity: .6; }
 
       /* --- item --- */
-      .item-wrap { border-radius: var(--R); margin-bottom: 6px; overflow: hidden; background: var(--secondary-background-color, rgba(0,0,0,.03)); }
+      .item-wrap { border-radius: var(--R); margin-bottom: 2px; overflow: hidden; }
+      .active-list .item-wrap { background: rgba(33,150,243,0.07); }
+      .completed-list .item-wrap { background: rgba(76,175,80,0.07); }
       .swipe-row { position: relative; overflow: hidden; border-radius: var(--R); }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
@@ -576,10 +578,12 @@ class EnhancedShoppingListCard extends HTMLElement {
       .sw-right { left: 0; background: #43a047; padding-left: 18px; }
       .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; }
       .item {
-        position: relative; display: flex; align-items: center; gap: 10px; padding: 10px 12px;
-        background: var(--card-background-color,#fff); min-height: 48px;
+        position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+        background: transparent; min-height: 44px;
         z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: default;
       }
+      .active-list .item { background: rgba(33,150,243,0.07); }
+      .completed-list .item { background: rgba(76,175,80,0.07); }
 
       /* --- checkbox --- */
       .chk {
@@ -613,24 +617,19 @@ class EnhancedShoppingListCard extends HTMLElement {
       .done-qty { font-size: 12px; color: var(--secondary-text-color); opacity: .6; white-space: nowrap; margin-right: 4px; }
       .completed-item { opacity: .7; }
 
-      /* --- quantity pill --- */
-      .qty-pill {
-        display: flex; align-items: center; gap: 0;
-        border: 1.5px solid var(--divider-color,#ddd); border-radius: 20px;
-        overflow: hidden; flex-shrink: 0; background: var(--card-background-color,#fff);
-      }
+      /* --- quantity --- */
+      .qty-area { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
       .qty-btn {
-        width: 32px; height: 32px; border: none; cursor: pointer;
+        width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer;
         display: flex; align-items: center; justify-content: center; padding: 0;
-        background: var(--secondary-background-color,#f5f5f5);
-        color: var(--primary-text-color); transition: all .12s;
+        background: var(--primary-color); color: #fff;
+        transition: all .12s; box-shadow: 0 1px 3px rgba(0,0,0,.12);
       }
-      .qty-btn:hover { background: var(--divider-color,#e0e0e0); }
-      .qty-btn:active { background: var(--primary-color); color: #fff; }
+      .qty-btn:hover { opacity: .85; transform: scale(1.08); }
+      .qty-btn:active { transform: scale(.92); box-shadow: none; }
       .qty-val {
-        min-width: 28px; text-align: center; font-size: 15px; font-weight: 600;
-        cursor: pointer; color: var(--primary-text-color); padding: 0 2px;
-        user-select: none;
+        min-width: 22px; text-align: center; font-size: 16px; font-weight: 700;
+        cursor: pointer; color: var(--primary-text-color); user-select: none;
       }
 
       /* --- icon buttons --- */
@@ -657,7 +656,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       /* --- note editor --- */
       .note-editor {
         padding: 6px 12px 10px 48px;
-        background: var(--card-background-color,#fff);
+        background: transparent;
       }
       .note-textarea {
         width: 100%; box-sizing: border-box; padding: 8px 10px;
@@ -706,7 +705,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       @media (max-width: 400px) {
         .content { padding: 6px 10px 12px; }
         .item { gap: 8px; padding: 8px 10px; }
-        .qty-btn { width: 28px; height: 28px; }
+        .qty-btn { width: 24px; height: 24px; }
       }
     `;
   }
