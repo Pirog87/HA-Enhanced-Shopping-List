@@ -84,8 +84,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    # Services are automatically removed when the domain is unloaded
+    """Unload a config entry — clean up services so reload works."""
+    for service_name in (
+        SERVICE_ADD_ITEM,
+        SERVICE_COMPLETE_ITEM,
+        SERVICE_UNCOMPLETE_ITEM,
+        SERVICE_REMOVE_ITEM,
+        SERVICE_UPDATE_ITEM,
+        SERVICE_CLEAR_COMPLETED,
+    ):
+        hass.services.async_remove(DOMAIN, service_name)
+
     hass.data.pop(DOMAIN, None)
     return True
 
@@ -223,28 +232,27 @@ def _async_register_services(hass: HomeAssistant, store: ShoppingListStore) -> N
         await store.async_clear_completed()
         _fire_event()
 
-    if not hass.services.has_service(DOMAIN, SERVICE_ADD_ITEM):
-        hass.services.async_register(
-            DOMAIN, SERVICE_ADD_ITEM, handle_add_item, schema=ADD_ITEM_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, SERVICE_COMPLETE_ITEM, handle_complete_item, schema=ITEM_ID_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_UNCOMPLETE_ITEM,
-            handle_uncomplete_item,
-            schema=ITEM_ID_SCHEMA,
-        )
-        hass.services.async_register(
-            DOMAIN, SERVICE_REMOVE_ITEM, handle_remove_item, schema=ITEM_ID_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, SERVICE_UPDATE_ITEM, handle_update_item, schema=UPDATE_ITEM_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, SERVICE_CLEAR_COMPLETED, handle_clear_completed
-        )
+    hass.services.async_register(
+        DOMAIN, SERVICE_ADD_ITEM, handle_add_item, schema=ADD_ITEM_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_COMPLETE_ITEM, handle_complete_item, schema=ITEM_ID_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UNCOMPLETE_ITEM,
+        handle_uncomplete_item,
+        schema=ITEM_ID_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_REMOVE_ITEM, handle_remove_item, schema=ITEM_ID_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_UPDATE_ITEM, handle_update_item, schema=UPDATE_ITEM_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_CLEAR_COMPLETED, handle_clear_completed
+    )
 
 
 # ------------------------------------------------------------------

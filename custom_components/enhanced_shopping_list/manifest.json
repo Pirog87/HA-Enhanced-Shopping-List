@@ -6,5 +6,5 @@
   "documentation": "https://github.com/Pirog87/HA-Enhanced-Shopping-List",
   "integration_type": "service",
   "iot_class": "local_push",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }
