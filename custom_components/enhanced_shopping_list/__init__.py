@@ -138,13 +138,14 @@ async def _async_register_card(hass: HomeAssistant) -> None:
 def _try_add_resource(hass: HomeAssistant, url: str) -> bool:
     """Add JS resource to Lovelace if not already registered."""
     try:
-        resources = hass.data.get("lovelace_resources")
-        if resources is None:
-            _LOGGER.debug(
-                "Lovelace resources not available (YAML mode?). "
-                "Add manually: %s",
-                url,
-            )
+        lovelace = hass.data.get("lovelace")
+        if lovelace is None:
+            _LOGGER.debug("Lovelace not available. Add resource manually: %s", url)
+            return False
+
+        resources = lovelace.resources
+        if resources is None or not resources.loaded:
+            _LOGGER.debug("Lovelace resources not loaded yet")
             return False
 
         for item in resources.async_items():
