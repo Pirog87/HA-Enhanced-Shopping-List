@@ -1,0 +1,8 @@
+{
+  "name": "Enhanced Shopping List",
+  "render_readme": true,
+  "domains": ["enhanced_shopping_list"],
+  "country": ["PL"],
+  "homeassistant": "2024.1.0",
+  "content_in_root": false
+}
