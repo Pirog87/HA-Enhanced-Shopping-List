@@ -28,33 +28,15 @@ Rozbudowana lista zakupów dla Home Assistant z ilościami, notatkami, fuzzy sea
 2. Skopiuj plik `www/enhanced-shopping-list-card.js` do katalogu `config/www/`
 3. Zrestartuj Home Assistant
 
-## Konfiguracja
+## Konfiguracja (automatyczna)
 
-### 1. Aktywacja integracji
+Po instalacji i restarcie HA:
 
-Dodaj do `configuration.yaml`:
+1. **Ustawienia > Urządzenia i usługi > Dodaj integrację** > szukaj **Enhanced Shopping List** > kliknij **ZATWIERDŹ**
+2. Karta JS rejestruje się automatycznie — nie trzeba dodawać zasobów ręcznie
+3. **Edytuj dashboard > Dodaj kartę** > w sekcji "Niestandardowe" znajdziesz **Enhanced Shopping List** > kliknij i gotowe
 
-```yaml
-enhanced_shopping_list:
-```
-
-Zrestartuj Home Assistant.
-
-### 2. Rejestracja karty Lovelace
-
-Przejdź do **Ustawienia > Dashboardy > Zasoby** (lub edytuj dashboard > menu > zasoby) i dodaj:
-
-- **URL:** `/local/enhanced-shopping-list-card.js`
-- **Typ:** JavaScript Module
-
-### 3. Dodanie karty do dashboardu
-
-W edytorze dashboardu dodaj kartę ręcznie (YAML):
-
-```yaml
-type: custom:enhanced-shopping-list-card
-title: "Lista zakupów"
-```
+Zero edycji YAML. Zero grzebania w plikach.
 
 ## Serwisy
 
@@ -100,11 +82,14 @@ Najprostsze podejście: ustaw dashboard z kartą listy zakupów jako domyślny w
 
 ```
 custom_components/enhanced_shopping_list/
-  __init__.py       # Setup, serwisy, WebSocket API
+  __init__.py       # Setup, serwisy, WebSocket API, auto-rejestracja karty
   manifest.json     # Manifest integracji HA
+  config_flow.py    # Config flow (instalacja z UI)
   const.py          # Stale (DOMAIN, STORAGE_KEY, EVENT_NAME)
   store.py          # Persystencja danych (JSON via HA Store)
   services.yaml     # Definicje serwisow
+  strings.json      # Teksty UI
+  translations/     # Tłumaczenia (en, pl)
 www/
   enhanced-shopping-list-card.js   # Lovelace custom card (LitElement)
 ```
