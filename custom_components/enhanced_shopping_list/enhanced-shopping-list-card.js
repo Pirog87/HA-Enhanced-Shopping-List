@@ -1,7 +1,7 @@
 /**
- * Enhanced Shopping List Card v2.4.1
+ * Enhanced Shopping List Card v2.5.0
  * Works with any todo.* entity (native HA shopping list)
- * Notes encoded in summary: "Name (qty) // note"
+ * Summary encoding: "Name (qty) [Category] // note"
  */
 
 /* ------------------------------------------------------------------ */
@@ -10,19 +10,28 @@
 
 function parseSummary(summary) {
   const s = (summary || "").trim();
-  let name = s, qty = 1, notes = "";
+  let name = s, qty = 1, notes = "", category = "";
+  // 1. Extract notes after " // "
   const noteIdx = s.indexOf(" // ");
   if (noteIdx >= 0) {
     notes = s.substring(noteIdx + 4).trim();
     name = s.substring(0, noteIdx).trim();
   }
+  // 2. Extract category from [...]
+  const catMatch = name.match(/^(.+?)\s*\[([^\]]+)\]$/);
+  if (catMatch) {
+    name = catMatch[1].trim();
+    category = catMatch[2].trim();
+  }
+  // 3. Extract quantity from (N)
   const qm = name.match(/^(.+?)\s*\((\d+)\)$/);
   if (qm) { name = qm[1].trim(); qty = parseInt(qm[2], 10); }
-  return { name, qty, notes };
+  return { name, qty, notes, category };
 }
 
-function formatSummary(name, qty, notes) {
+function formatSummary(name, qty, notes, category) {
   let s = qty > 1 ? `${name} (${qty})` : name;
+  if (category) s += ` [${category}]`;
   if (notes) s += ` // ${notes}`;
   return s;
 }
@@ -97,8 +106,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     try {
       const res = await this._hass.callWS({ type: "todo/item/list", entity_id: this._config.entity });
       this._items = (res.items || []).map((it) => {
-        const { name, qty, notes } = parseSummary(it.summary);
-        return { uid: it.uid, name, quantity: qty, notes, status: it.status, summary: it.summary };
+        const { name, qty, notes, category } = parseSummary(it.summary);
+        return { uid: it.uid, name, quantity: qty, notes, category, status: it.status, summary: it.summary };
       });
       this._updateLists();
     } catch (e) { console.error("ESL: fetch failed", e); }
@@ -111,8 +120,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     } catch (e) { console.error(`ESL: todo.${service} error`, e); }
   }
 
-  async _addItem(name, qty = 1, notes = "") {
-    await this._callService("add_item", { item: formatSummary(name, qty, notes) });
+  async _addItem(name, qty = 1, notes = "", category = "") {
+    await this._callService("add_item", { item: formatSummary(name, qty, notes, category) });
     await this._fetchItems();
   }
 
@@ -132,19 +141,22 @@ class EnhancedShoppingListCard extends HTMLElement {
     const li = this._items.find(i => i.uid === item.uid);
     const name = li ? li.name : item.name;
     const notes = li ? li.notes : (item.notes || "");
-    if (li) { li.quantity = q; li.summary = formatSummary(name, q, notes); }
+    const category = li ? li.category : (item.category || "");
+    if (li) { li.quantity = q; li.summary = formatSummary(name, q, notes, category); }
     this._updateLists();
     clearTimeout(this._qtyTimers[item.uid]);
     this._qtyTimers[item.uid] = setTimeout(async () => {
       delete this._qtyTimers[item.uid];
-      await this._callService("update_item", { item: item.uid, rename: formatSummary(name, q, notes) });
+      await this._callService("update_item", { item: item.uid, rename: formatSummary(name, q, notes, category) });
       await this._fetchItems();
     }, 500);
   }
 
   async _updateName(item, newName) {
+    const li = this._items.find(i => i.uid === item.uid);
+    const category = li ? li.category : (item.category || "");
     await this._callService("update_item", {
-      item: item.uid, rename: formatSummary(newName.trim(), item.quantity, item.notes || ""),
+      item: item.uid, rename: formatSummary(newName.trim(), item.quantity, item.notes || "", category),
     });
     await this._fetchItems();
   }
@@ -153,11 +165,32 @@ class EnhancedShoppingListCard extends HTMLElement {
     const li = this._items.find(i => i.uid === item.uid);
     const name = li ? li.name : item.name;
     const qty = li ? li.quantity : item.quantity;
+    const category = li ? li.category : (item.category || "");
     await this._callService("update_item", {
-      item: item.uid, rename: formatSummary(name, qty, notes),
+      item: item.uid, rename: formatSummary(name, qty, notes, category),
     });
     if (li) li.notes = notes;
     await this._fetchItems();
+  }
+
+  async _updateCategory(item, category) {
+    const li = this._items.find(i => i.uid === item.uid);
+    const name = li ? li.name : item.name;
+    const qty = li ? li.quantity : item.quantity;
+    const notes = li ? li.notes : (item.notes || "");
+    await this._callService("update_item", {
+      item: item.uid, rename: formatSummary(name, qty, notes, category),
+    });
+    if (li) li.category = category;
+    await this._fetchItems();
+  }
+
+  _getCategories() {
+    const cats = new Set();
+    for (const item of this._items) {
+      if (item.category) cats.add(item.category);
+    }
+    return [...cats].sort((a, b) => a.localeCompare(b, "pl"));
   }
 
   async _clearCompleted() {
@@ -189,8 +222,23 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _sortItems(items) {
-    if (this._config.sort_by === "alphabetical") return [...items].sort((a, b) => a.name.localeCompare(b.name, "pl"));
-    return items;
+    const sorted = [...items];
+    const hasAnyCat = sorted.some(i => i.category);
+    if (hasAnyCat) {
+      // Primary: category (items with category first, sorted alphabetically)
+      // Secondary: alphabetical by name within category
+      sorted.sort((a, b) => {
+        const catA = (a.category || "").toLowerCase();
+        const catB = (b.category || "").toLowerCase();
+        if (catA && !catB) return -1;
+        if (!catA && catB) return 1;
+        if (catA !== catB) return catA.localeCompare(catB, "pl");
+        return a.name.localeCompare(b.name, "pl");
+      });
+    } else if (this._config.sort_by === "alphabetical") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name, "pl"));
+    }
+    return sorted;
   }
 
   /* ---------- rendering ---------- */
@@ -292,7 +340,24 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!active.length) {
       aList.innerHTML = '<div class="empty-msg">Lista jest pusta</div>';
     } else {
-      aList.innerHTML = active.map(i => this._htmlActiveItem(i)).join("");
+      const hasAnyCat = active.some(i => i.category);
+      let html = "";
+      let lastCat = null;
+      for (const item of active) {
+        if (hasAnyCat) {
+          const cat = item.category || "";
+          if (cat !== lastCat) {
+            if (cat) {
+              html += `<div class="cat-header"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 3H4a1 1 0 00-1 1v6a1 1 0 001 1h1l5 5V3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20.5 11.5L17 8l-3 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(cat)}</div>`;
+            } else {
+              html += `<div class="cat-header cat-header-none">Inne</div>`;
+            }
+            lastCat = cat;
+          }
+        }
+        html += this._htmlActiveItem(item);
+      }
+      aList.innerHTML = html;
       this._bindItemEvents(aList, active, false);
     }
     const cSec = R.querySelector(".completed-section");
@@ -312,6 +377,9 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _htmlActiveItem(item) {
     const hn = item.notes ? " has-note" : "";
+    const hc = item.category ? " has-cat" : "";
+    const catBadge = item.category
+      ? `<span class="cat-badge" data-action="edit-category">${esc(item.category)}</span>` : "";
     const notePreview = item.notes
       ? `<div class="note-preview" data-action="toggle-note">${esc(item.notes)}</div>` : "";
     return `
@@ -322,11 +390,17 @@ class EnhancedShoppingListCard extends HTMLElement {
         <div class="item" data-uid="${item.uid}">
           <div class="chk" data-action="toggle"><div class="chk-inner"></div></div>
           <div class="item-body">
-            <div class="item-name" data-action="edit-name">${esc(item.name)}</div>
+            <div class="item-name-row">
+              <span class="item-name" data-action="edit-name">${esc(item.name)}</span>
+              ${catBadge}
+            </div>
             ${notePreview}
           </div>
+          <button class="icon-btn cat-btn${hc}" data-action="edit-category" title="${item.category || "Kategoria"}">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="${item.category ? "var(--primary-color)" : "none"}" stroke="${item.category ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.5" fill="${item.category ? "#fff" : "var(--disabled-text-color,#999)"}"/></svg>
+          </button>
           <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
-            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/></svg>
           </button>
           <div class="qty-area">
             <button class="qty-btn" data-action="qty-minus">
@@ -345,10 +419,20 @@ class EnhancedShoppingListCard extends HTMLElement {
           <button class="note-save">Zapisz</button>
         </div>
       </div>
+      <div class="cat-editor" style="display:none">
+        <div class="cat-chips"></div>
+        <div class="cat-input-row">
+          <input class="cat-input" type="text" placeholder="Nowa kategoria..." value="${esc(item.category || "")}" />
+          <button class="cat-save">Zapisz</button>
+          ${item.category ? '<button class="cat-remove">Usun</button>' : ""}
+        </div>
+      </div>
     </div>`;
   }
 
   _htmlCompletedItem(item) {
+    const catBadge = item.category
+      ? `<span class="cat-badge cat-badge-done">${esc(item.category)}</span>` : "";
     return `
     <div class="item-wrap" data-uid="${item.uid}">
       <div class="swipe-row">
@@ -357,7 +441,10 @@ class EnhancedShoppingListCard extends HTMLElement {
             <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
           <div class="item-body">
-            <div class="item-name done-name">${esc(item.name)}</div>
+            <div class="item-name-row">
+              <span class="item-name done-name">${esc(item.name)}</span>
+              ${catBadge}
+            </div>
             ${item.notes ? `<div class="note-preview done-note">${esc(item.notes)}</div>` : ""}
           </div>
           ${item.quantity > 1 ? `<span class="done-qty">${item.quantity} szt.</span>` : ""}
@@ -388,6 +475,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           case "qty-plus": this._updateQuantity(item, item.quantity + 1); break;
           case "edit-qty": this._startEditQty(el, item); break;
           case "toggle-note": this._toggleNoteEditor(el, item); break;
+          case "edit-category": if (!isCompleted) this._toggleCategoryEditor(el, item); break;
           case "delete": this._removeItem(item); break;
         }
       });
@@ -477,6 +565,9 @@ class EnhancedShoppingListCard extends HTMLElement {
   _toggleNoteEditor(wrap, item) {
     const ed = wrap.querySelector(".note-editor"); if (!ed) return;
     const open = ed.style.display !== "none";
+    // Close category editor if open
+    const catEd = wrap.querySelector(".cat-editor");
+    if (catEd) catEd.style.display = "none";
     ed.style.display = open ? "none" : "";
     if (!open) {
       const ta = ed.querySelector(".note-textarea");
@@ -490,6 +581,58 @@ class EnhancedShoppingListCard extends HTMLElement {
       const nb = btn.cloneNode(true); btn.replaceWith(nb);
       nb.addEventListener("click", save);
       ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } };
+    }
+  }
+
+  _toggleCategoryEditor(wrap, item) {
+    const ed = wrap.querySelector(".cat-editor"); if (!ed) return;
+    const open = ed.style.display !== "none";
+    // Close note editor if open
+    const noteEd = wrap.querySelector(".note-editor");
+    if (noteEd) noteEd.style.display = "none";
+    ed.style.display = open ? "none" : "";
+    if (!open) {
+      const cats = this._getCategories();
+      const chipsEl = ed.querySelector(".cat-chips");
+      chipsEl.innerHTML = cats.map(c =>
+        `<span class="cat-chip${c === item.category ? ' cat-chip-active' : ''}" data-cat="${esc(c)}">${esc(c)}</span>`
+      ).join("");
+
+      const inp = ed.querySelector(".cat-input");
+      inp.value = item.category || "";
+      setTimeout(() => inp.focus(), 50);
+
+      // Bind chip clicks
+      chipsEl.querySelectorAll(".cat-chip").forEach(chip => {
+        chip.addEventListener("click", () => {
+          const cat = chip.dataset.cat;
+          if (cat === item.category) {
+            this._updateCategory(item, "");
+          } else {
+            this._updateCategory(item, cat);
+          }
+          ed.style.display = "none";
+        });
+      });
+
+      // Save button
+      const saveBtn = ed.querySelector(".cat-save");
+      const newSave = saveBtn.cloneNode(true); saveBtn.replaceWith(newSave);
+      newSave.addEventListener("click", () => {
+        this._updateCategory(item, inp.value.trim());
+        ed.style.display = "none";
+      });
+      inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); newSave.click(); } };
+
+      // Remove button
+      const removeBtn = ed.querySelector(".cat-remove");
+      if (removeBtn) {
+        const newRemove = removeBtn.cloneNode(true); removeBtn.replaceWith(newRemove);
+        newRemove.addEventListener("click", () => {
+          this._updateCategory(item, "");
+          ed.style.display = "none";
+        });
+      }
     }
   }
 
@@ -508,7 +651,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     box.innerHTML = this._suggestions.map(x => {
       const on = x.i.status === "needs_action";
       const badge = on ? `<span class="sg-badge">${x.i.quantity} szt.</span>` : `<span class="sg-badge sg-done">kupione</span>`;
-      return `<div class="sg-item" data-uid="${x.i.uid}"><span class="sg-name">${esc(x.i.name)}</span>${badge}</div>`;
+      const catInfo = x.i.category ? `<span class="sg-cat">${esc(x.i.category)}</span>` : "";
+      return `<div class="sg-item" data-uid="${x.i.uid}"><span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
     }).join("");
     box.querySelectorAll(".sg-item").forEach(el => {
       el.addEventListener("mousedown", e => {
@@ -574,6 +718,11 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: var(--primary-color); color: #fff; white-space: nowrap;
       }
       .sg-done { background: var(--disabled-text-color,#999); }
+      .sg-cat {
+        font-size: 11px; padding: 2px 6px; border-radius: 6px;
+        background: rgba(var(--esl-active-rgb), 0.15); color: var(--secondary-text-color);
+        white-space: nowrap;
+      }
 
       /* --- sections --- */
       .section { margin-bottom: 8px; }
@@ -587,6 +736,16 @@ class EnhancedShoppingListCard extends HTMLElement {
         font-size: 11px; font-weight: 700; background: var(--primary-color); color: #fff;
       }
       .empty-msg { padding: 24px 0; text-align: center; color: var(--secondary-text-color); font-size: 14px; opacity: .6; }
+
+      /* --- category group headers --- */
+      .cat-header {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 13px; font-weight: 600; color: var(--primary-color);
+        padding: 14px 4px 6px; letter-spacing: .3px;
+      }
+      .cat-header svg { opacity: .7; }
+      .cat-header-none { color: var(--secondary-text-color); }
+      .active-list .cat-header:first-child { padding-top: 4px; }
 
       /* --- item tile (matching HA todo-card style) --- */
       .item-wrap {
@@ -635,9 +794,21 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- item body --- */
       .item-body { flex: 1; min-width: 0; }
+      .item-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .item-name {
         font-size: 16px; font-weight: 500; color: var(--primary-text-color); cursor: pointer;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+      }
+      .cat-badge {
+        font-size: 11px; padding: 2px 8px; border-radius: 8px;
+        background: rgba(var(--esl-active-rgb), 0.25);
+        color: var(--secondary-text-color); white-space: nowrap;
+        cursor: pointer; flex-shrink: 0;
+      }
+      .cat-badge:hover { opacity: .8; }
+      .cat-badge-done {
+        background: rgba(var(--esl-done-rgb), 0.25);
+        opacity: .6;
       }
       .note-preview {
         font-size: 14px; font-weight: 400; color: var(--secondary-text-color);
@@ -672,7 +843,9 @@ class EnhancedShoppingListCard extends HTMLElement {
         opacity: .4;
       }
       .icon-btn:hover { background: rgba(128,128,128,.15); opacity: .8; }
-      .icon-btn.has-note { opacity: 1; }
+      .icon-btn.has-note, .icon-btn.has-cat { opacity: 1; }
+      .cat-btn { opacity: .3; }
+      .cat-btn.has-cat { opacity: 1; }
       .del-btn { opacity: .5; }
       .del-btn:hover { background: rgba(229,57,53,.15); opacity: 1; }
 
@@ -705,6 +878,42 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: var(--primary-color); color: #fff; transition: opacity .15s;
       }
       .note-save:hover { opacity: .85; }
+
+      /* --- category editor --- */
+      .cat-editor {
+        padding: 8px 14px 12px 52px;
+        background: transparent;
+      }
+      .cat-chips {
+        display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
+      }
+      .cat-chip {
+        font-size: 13px; padding: 5px 12px; border-radius: 16px; cursor: pointer;
+        background: rgba(var(--esl-active-rgb), 0.15);
+        color: var(--primary-text-color); transition: all .15s;
+        border: 1.5px solid transparent;
+      }
+      .cat-chip:hover { background: rgba(var(--esl-active-rgb), 0.30); }
+      .cat-chip-active {
+        background: var(--primary-color); color: #fff;
+        border-color: var(--primary-color);
+      }
+      .cat-input-row { display: flex; gap: 8px; align-items: center; }
+      .cat-input {
+        flex: 1; padding: 8px 10px;
+        border: 1.5px solid var(--divider-color,#ddd); border-radius: 8px;
+        background: var(--secondary-background-color,#f8f8f8); color: var(--primary-text-color);
+        font-size: 13px; font-family: inherit; outline: none; transition: border-color .2s;
+      }
+      .cat-input:focus { border-color: var(--primary-color); }
+      .cat-save, .cat-remove {
+        padding: 6px 14px; border-radius: 8px; border: none; font-size: 13px;
+        cursor: pointer; font-weight: 600; transition: opacity .15s; white-space: nowrap;
+      }
+      .cat-save { background: var(--primary-color); color: #fff; }
+      .cat-save:hover { opacity: .85; }
+      .cat-remove { background: rgba(229,57,53,.15); color: var(--error-color,#e53935); }
+      .cat-remove:hover { background: rgba(229,57,53,.25); }
 
       /* --- completed section --- */
       .completed-header {
@@ -739,6 +948,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         .item { gap: 8px; padding: 8px 10px; }
         .qty-area { gap: 8px; }
         .qty-btn { width: 26px; height: 26px; }
+        .cat-editor, .note-editor { padding-left: 40px; }
       }
     `;
   }
@@ -865,12 +1075,12 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "enhanced-shopping-list-card",
   name: "Enhanced Shopping List",
-  description: "Rozbudowana lista zakupow z ilosciami, notatkami i fuzzy search",
+  description: "Rozbudowana lista zakupow z ilosciami, notatkami, kategoriami i fuzzy search",
   preview: false,
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.4.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.5.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
