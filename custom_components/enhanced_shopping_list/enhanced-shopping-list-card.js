@@ -195,10 +195,20 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   /* ---------- rendering ---------- */
 
+  _hexToRgb(hex) {
+    const h = (hex || "").replace("#", "");
+    return `${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)}`;
+  }
+
   _render() {
     const title = this._config.title || "Lista zakupów";
+    const activeRgb = this._hexToRgb(this._config.color_active || "#2196f3");
+    const doneRgb = this._hexToRgb(this._config.color_completed || "#4caf50");
     this.shadowRoot.innerHTML = `
-      <style>${EnhancedShoppingListCard.CSS}</style>
+      <style>
+        :host { --esl-active-rgb: ${activeRgb}; --esl-done-rgb: ${doneRgb}; }
+        ${EnhancedShoppingListCard.CSS}
+      </style>
       <ha-card>
         <div class="header">${esc(title)}</div>
         <div class="content">
@@ -568,8 +578,8 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- item --- */
       .item-wrap { border-radius: var(--R); margin-bottom: 2px; overflow: hidden; }
-      .active-list .item-wrap { background: rgba(33,150,243,0.07); }
-      .completed-list .item-wrap { background: rgba(76,175,80,0.07); }
+      .active-list .item-wrap { background: rgba(var(--esl-active-rgb), 0.08); }
+      .completed-list .item-wrap { background: rgba(var(--esl-done-rgb), 0.08); }
       .swipe-row { position: relative; overflow: hidden; border-radius: var(--R); }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
@@ -582,8 +592,8 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: transparent; min-height: 44px;
         z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: default;
       }
-      .active-list .item { background: rgba(33,150,243,0.07); }
-      .completed-list .item { background: rgba(76,175,80,0.07); }
+      .active-list .item { background: rgba(var(--esl-active-rgb), 0.08); }
+      .completed-list .item { background: rgba(var(--esl-done-rgb), 0.08); }
 
       /* --- checkbox --- */
       .chk {
@@ -751,6 +761,14 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           background: var(--card-background-color,#fff); color: var(--primary-text-color);
           font-family: inherit; font-size: 14px;
         }
+        .color-row { display: flex; align-items: center; gap: 10px; }
+        .color-row input[type="color"] {
+          width: 40px; height: 40px; border: 1.5px solid var(--divider-color,#ddd);
+          border-radius: 8px; padding: 2px; cursor: pointer; background: none;
+        }
+        .color-preview {
+          flex: 1; height: 32px; border-radius: 8px; opacity: .35;
+        }
       </style>
       <div class="esl-ed">
         <div class="row">
@@ -768,11 +786,33 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <option value="alphabetical"${this._config.sort_by === "alphabetical" ? " selected" : ""}>Alfabetycznie</option>
           </select>
         </div>
+        <div class="row">
+          <label>Kolor: Do kupienia</label>
+          <div class="color-row">
+            <input type="color" id="esl-color-active" value="${this._config.color_active || "#2196f3"}" />
+            <div class="color-preview" id="esl-preview-active" style="background:${this._config.color_active || "#2196f3"}"></div>
+          </div>
+        </div>
+        <div class="row">
+          <label>Kolor: Kupione</label>
+          <div class="color-row">
+            <input type="color" id="esl-color-done" value="${this._config.color_completed || "#4caf50"}" />
+            <div class="color-preview" id="esl-preview-done" style="background:${this._config.color_completed || "#4caf50"}"></div>
+          </div>
+        </div>
       </div>`;
     this._populateEntities();
     this.querySelector("#esl-entity").addEventListener("change", e => { this._config = { ...this._config, entity: e.target.value }; this._fire(); });
     this.querySelector("#esl-title").addEventListener("input", e => { this._config = { ...this._config, title: e.target.value }; this._fire(); });
     this.querySelector("#esl-sort").addEventListener("change", e => { this._config = { ...this._config, sort_by: e.target.value }; this._fire(); });
+    this.querySelector("#esl-color-active").addEventListener("input", e => {
+      this._config = { ...this._config, color_active: e.target.value }; this._fire();
+      this.querySelector("#esl-preview-active").style.background = e.target.value;
+    });
+    this.querySelector("#esl-color-done").addEventListener("input", e => {
+      this._config = { ...this._config, color_completed: e.target.value }; this._fire();
+      this.querySelector("#esl-preview-done").style.background = e.target.value;
+    });
   }
 
   _fire() {
