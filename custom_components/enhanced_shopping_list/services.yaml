@@ -1,0 +1,92 @@
+add_item:
+  name: Add item
+  description: Add an item to the shopping list. If the item already exists in the active list, its quantity is increased. If it exists in the completed list, it is moved back to active.
+  fields:
+    name:
+      name: Name
+      description: Name of the product to add.
+      required: true
+      example: "mleko"
+      selector:
+        text:
+    quantity:
+      name: Quantity
+      description: Quantity to add (default 1).
+      default: 1
+      example: 2
+      selector:
+        number:
+          min: 1
+          mode: box
+    notes:
+      name: Notes
+      description: Optional notes for the item.
+      default: ""
+      example: "2% tłuszczu"
+      selector:
+        text:
+
+complete_item:
+  name: Complete item
+  description: Mark an item as purchased (complete).
+  fields:
+    item_id:
+      name: Item ID
+      description: The UUID of the item to complete.
+      required: true
+      selector:
+        text:
+
+uncomplete_item:
+  name: Uncomplete item
+  description: Move a completed item back to the active shopping list.
+  fields:
+    item_id:
+      name: Item ID
+      description: The UUID of the item to uncomplete.
+      required: true
+      selector:
+        text:
+
+remove_item:
+  name: Remove item
+  description: Remove an item from the shopping list entirely.
+  fields:
+    item_id:
+      name: Item ID
+      description: The UUID of the item to remove.
+      required: true
+      selector:
+        text:
+
+update_item:
+  name: Update item
+  description: Update the quantity or notes of an existing item.
+  fields:
+    item_id:
+      name: Item ID
+      description: The UUID of the item to update.
+      required: true
+      selector:
+        text:
+    name:
+      name: Name
+      description: New name for the item.
+      selector:
+        text:
+    quantity:
+      name: Quantity
+      description: New quantity for the item.
+      selector:
+        number:
+          min: 1
+          mode: box
+    notes:
+      name: Notes
+      description: New notes for the item.
+      selector:
+        text:
+
+clear_completed:
+  name: Clear completed
+  description: Remove all completed (purchased) items from the list.
