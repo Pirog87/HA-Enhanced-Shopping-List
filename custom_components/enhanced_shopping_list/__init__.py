@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
-import shutil
 from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, EVENT_NAME
@@ -58,6 +61,15 @@ UPDATE_ITEM_SCHEMA = vol.Schema(
 # Allow YAML-based setup to keep working (just creates a config entry)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
+# Frontend constants
+CARD_FILENAME = "enhanced-shopping-list-card.js"
+URL_BASE = f"/{DOMAIN}"
+CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
+
+# Read version from manifest.json
+_MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text())
+VERSION = _MANIFEST.get("version", "0.0.0")
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up via YAML — just ensure the integration is loaded."""
@@ -70,8 +82,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await store.async_load()
     hass.data[DOMAIN] = store
 
-    # --- Auto-register the Lovelace card JS resource ---
-    await _async_register_card(hass)
+    # --- Register frontend (serve JS + add to Lovelace) ---
+    await _async_register_frontend(hass)
 
     # --- Register services ---
     _async_register_services(hass, store)
@@ -79,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # --- Register WebSocket API ---
     _async_register_websocket(hass, store)
 
-    _LOGGER.info("Enhanced Shopping List loaded successfully")
+    _LOGGER.info("Enhanced Shopping List v%s loaded successfully", VERSION)
     return True
 
 
@@ -100,70 +112,93 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 # ------------------------------------------------------------------
-#  Auto-register Lovelace card JS file
+#  Frontend: serve JS and register as Lovelace resource
 # ------------------------------------------------------------------
 
-CARD_FILENAME = "enhanced-shopping-list-card.js"
-LOVELACE_URL = f"/local/{CARD_FILENAME}"
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Serve JS from integration directory and register as Lovelace resource."""
+    url_with_version = f"{CARD_URL}?v={VERSION}"
 
-
-async def _async_register_card(hass: HomeAssistant) -> None:
-    """Copy card JS to config/www/ and register as Lovelace resource."""
-    source = Path(__file__).parent / CARD_FILENAME
-    www_dir = Path(hass.config.path("www"))
-    dest = www_dir / CARD_FILENAME
-
-    # Ensure config/www/ exists
-    www_dir.mkdir(parents=True, exist_ok=True)
-
-    # Copy JS (overwrite on every setup to keep it up-to-date)
+    # Step 1: Register static HTTP path so HA serves the JS file
+    # This makes /enhanced_shopping_list/enhanced-shopping-list-card.js available
     try:
-        shutil.copy2(str(source), str(dest))
-        _LOGGER.info("Card JS copied to %s", dest)
-    except Exception:  # noqa: BLE001
-        _LOGGER.error(
-            "Failed to copy card JS from %s to %s", source, dest
+        await hass.http.async_register_static_paths([
+            StaticPathConfig(
+                url_path=URL_BASE,
+                path=str(Path(__file__).parent),
+                cache_headers=True,
+            )
+        ])
+        _LOGGER.debug("Static path registered: %s -> %s", URL_BASE, Path(__file__).parent)
+    except RuntimeError:
+        _LOGGER.debug("Static path already registered: %s", URL_BASE)
+
+    # Step 2: Inject as extra JS module (loads on every page, all Lovelace modes)
+    # This is the most reliable method — works in storage mode, YAML mode, etc.
+    add_extra_js_url(hass, url_with_version)
+    _LOGGER.debug("Added extra JS URL: %s", url_with_version)
+
+    # Step 3: Also register as Lovelace resource (needed for Chromecast displays)
+    await _async_register_lovelace_resource(hass, url_with_version)
+
+
+async def _async_register_lovelace_resource(
+    hass: HomeAssistant, url: str, *, _retries: int = 0
+) -> None:
+    """Register JS as a Lovelace module resource (storage mode only)."""
+    lovelace = hass.data.get("lovelace")
+    if lovelace is None:
+        _LOGGER.debug("Lovelace not available — skipping resource registration")
+        return
+
+    if lovelace.mode != "storage":
+        _LOGGER.debug(
+            "Lovelace is in %s mode — resource auto-registration skipped",
+            lovelace.mode,
         )
         return
 
-    # Register as Lovelace resource
-    if not _try_add_resource(hass, LOVELACE_URL):
-        hass.bus.async_listen_once(
-            "homeassistant_started",
-            lambda _: _try_add_resource(hass, LOVELACE_URL),
-        )
+    resources = lovelace.resources
 
+    if not resources.loaded:
+        if _retries < 5:
+            _LOGGER.debug(
+                "Lovelace resources not loaded yet, retrying in 5s (attempt %d)",
+                _retries + 1,
+            )
+            async_call_later(
+                hass,
+                5,
+                lambda _now: hass.async_create_task(
+                    _async_register_lovelace_resource(
+                        hass, url, _retries=_retries + 1
+                    )
+                ),
+            )
+        else:
+            _LOGGER.warning(
+                "Lovelace resources never loaded — add resource manually: %s", url
+            )
+        return
 
-@callback
-def _try_add_resource(hass: HomeAssistant, url: str) -> bool:
-    """Add JS resource to Lovelace if not already registered."""
-    try:
-        lovelace = hass.data.get("lovelace")
-        if lovelace is None:
-            _LOGGER.debug("Lovelace not available. Add resource manually: %s", url)
-            return False
+    url_path = url.split("?")[0]
 
-        resources = lovelace.resources
-        if resources is None or not resources.loaded:
-            _LOGGER.debug("Lovelace resources not loaded yet")
-            return False
+    for item in resources.async_items():
+        existing_path = item.get("url", "").split("?")[0]
+        if existing_path == url_path:
+            # Already registered — update if version changed
+            if item["url"] != url:
+                await resources.async_update_item(
+                    item["id"], {"res_type": "module", "url": url}
+                )
+                _LOGGER.info("Updated Lovelace resource: %s", url)
+            else:
+                _LOGGER.debug("Lovelace resource already registered: %s", url)
+            return
 
-        for item in resources.async_items():
-            stored = item.get("url", "").split("?")[0]
-            if stored == url or CARD_FILENAME in stored:
-                _LOGGER.debug("Lovelace resource already registered")
-                return True
-
-        hass.async_create_task(
-            resources.async_create_item({"res_type": "module", "url": url})
-        )
-        _LOGGER.info("Auto-registered Lovelace resource: %s", url)
-        return True
-    except Exception:  # noqa: BLE001
-        _LOGGER.warning(
-            "Could not auto-register resource. Add manually: %s", url
-        )
-        return False
+    # Not registered yet — create
+    await resources.async_create_item({"res_type": "module", "url": url})
+    _LOGGER.info("Auto-registered Lovelace resource: %s", url)
 
 
 # ------------------------------------------------------------------

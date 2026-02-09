@@ -893,4 +893,4 @@ window.customCards.push({
   preview: false,
 });
 
-console.info("%c ENHANCED-SHOPPING-LIST %c v1.1.0 ", "background:#4CAF50;color:white;font-weight:bold;", "background:#333;color:white;");
+console.info("%c ENHANCED-SHOPPING-LIST %c v1.3.0 ", "background:#4CAF50;color:white;font-weight:bold;", "background:#333;color:white;");
