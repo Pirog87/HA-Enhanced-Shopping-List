@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.3.1
+ * Enhanced Shopping List Card v2.4.0
  * Works with any todo.* entity (native HA shopping list)
  * Notes encoded in summary: "Name (qty) // note"
  */
@@ -520,10 +520,10 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   static get CSS() {
     return `
-      :host { --R: 12px; }
-      ha-card { overflow: hidden; }
-      .header { padding: 16px 16px 4px; font-size: 20px; font-weight: 600; color: var(--primary-text-color); }
-      .content { padding: 8px 16px 16px; }
+      :host { --R: var(--ha-card-border-radius, 12px); }
+      ha-card { overflow: visible; }
+      .header { padding: 16px 20px 4px; font-size: 20px; font-weight: 500; color: var(--primary-text-color); }
+      .content { padding: 8px 12px 12px; }
 
       /* --- add --- */
       .add-section { position: relative; margin-bottom: 14px; }
@@ -576,8 +576,12 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .empty-msg { padding: 24px 0; text-align: center; color: var(--secondary-text-color); font-size: 14px; opacity: .6; }
 
-      /* --- item --- */
-      .item-wrap { border-radius: var(--R); margin-bottom: 2px; overflow: hidden; }
+      /* --- item tile (matching HA todo-card style) --- */
+      .item-wrap {
+        border-radius: var(--R); margin-bottom: 8px; overflow: hidden;
+      }
+      .active-list .item-wrap:last-child,
+      .completed-list .item-wrap:last-child { margin-bottom: 0; }
       .swipe-row { position: relative; overflow: hidden; border-radius: var(--R); }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
@@ -586,20 +590,21 @@ class EnhancedShoppingListCard extends HTMLElement {
       .sw-right { left: 0; background: #43a047; padding-left: 18px; }
       .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; }
       .item {
-        position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 12px;
-        background: transparent; min-height: 44px;
-        z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: default;
+        position: relative; display: flex; align-items: center; gap: 12px;
+        padding: 10px 14px; min-height: 50px;
+        background: transparent;
+        z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: pointer;
       }
       .active-list .item {
         background: linear-gradient(
-          rgba(var(--esl-active-rgb), 0.15),
-          rgba(var(--esl-active-rgb), 0.15)
+          rgba(var(--esl-active-rgb), 0.20),
+          rgba(var(--esl-active-rgb), 0.20)
         ), var(--card-background-color, #1c1c1c);
       }
       .completed-list .item {
         background: linear-gradient(
-          rgba(var(--esl-done-rgb), 0.15),
-          rgba(var(--esl-done-rgb), 0.15)
+          rgba(var(--esl-done-rgb), 0.20),
+          rgba(var(--esl-done-rgb), 0.20)
         ), var(--card-background-color, #1c1c1c);
       }
 
@@ -623,44 +628,45 @@ class EnhancedShoppingListCard extends HTMLElement {
       /* --- item body --- */
       .item-body { flex: 1; min-width: 0; }
       .item-name {
-        font-size: 15px; color: var(--primary-text-color); cursor: pointer;
+        font-size: 16px; font-weight: 500; color: var(--primary-text-color); cursor: pointer;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .note-preview {
-        font-size: 12px; color: var(--secondary-text-color); margin-top: 2px;
+        font-size: 14px; font-weight: 400; color: var(--secondary-text-color);
+        opacity: .7; margin-top: 2px;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
       }
       .done-name { text-decoration: line-through; opacity: .5; }
       .done-note { opacity: .4; }
-      .done-qty { font-size: 12px; color: var(--secondary-text-color); opacity: .6; white-space: nowrap; margin-right: 4px; }
+      .done-qty { font-size: 13px; color: var(--secondary-text-color); opacity: .6; white-space: nowrap; margin-right: 4px; }
       .completed-item { opacity: .7; }
 
       /* --- quantity --- */
       .qty-area { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
       .qty-btn {
-        width: 28px; height: 28px; border-radius: 50%; border: none; cursor: pointer;
+        width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
         display: flex; align-items: center; justify-content: center; padding: 0;
         background: var(--primary-color); color: #fff;
-        transition: all .12s; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+        transition: all .15s ease;
       }
-      .qty-btn:hover { opacity: .85; transform: scale(1.08); }
-      .qty-btn:active { transform: scale(.92); box-shadow: none; }
+      .qty-btn:hover { opacity: .85; transform: scale(1.1); }
+      .qty-btn:active { transform: scale(.9); }
       .qty-val {
-        min-width: 22px; text-align: center; font-size: 16px; font-weight: 700;
+        min-width: 24px; text-align: center; font-size: 17px; font-weight: 700;
         cursor: pointer; color: var(--primary-text-color); user-select: none;
       }
 
       /* --- icon buttons --- */
       .icon-btn {
-        background: none; border: none; padding: 6px; cursor: pointer;
+        background: none; border: none; padding: 8px; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
-        border-radius: 8px; transition: background .12s; flex-shrink: 0;
+        border-radius: 50%; transition: background .15s; flex-shrink: 0;
         opacity: .4;
       }
-      .icon-btn:hover { background: var(--secondary-background-color,#f0f0f0); opacity: .8; }
+      .icon-btn:hover { background: rgba(128,128,128,.15); opacity: .8; }
       .icon-btn.has-note { opacity: 1; }
       .del-btn { opacity: .5; }
-      .del-btn:hover { background: rgba(229,57,53,.1); opacity: 1; }
+      .del-btn:hover { background: rgba(229,57,53,.15); opacity: 1; }
 
       /* --- inline edit --- */
       .inline-edit {
@@ -673,7 +679,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- note editor --- */
       .note-editor {
-        padding: 6px 12px 10px 48px;
+        padding: 8px 14px 12px 52px;
         background: transparent;
       }
       .note-textarea {
@@ -705,9 +711,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .clear-all-btn:hover { background: var(--secondary-background-color,#f0f0f0); }
       .confirm-bar {
-        display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+        display: flex; align-items: center; gap: 8px; padding: 12px 14px;
         background: var(--secondary-background-color,#f5f5f5); border-radius: var(--R);
-        margin-bottom: 8px; font-size: 13px;
+        margin-bottom: 8px; font-size: 14px;
       }
       .confirm-bar span { flex: 1; }
       .btn-yes, .btn-no {
@@ -721,9 +727,10 @@ class EnhancedShoppingListCard extends HTMLElement {
       @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
 
       @media (max-width: 400px) {
-        .content { padding: 6px 10px 12px; }
+        .content { padding: 6px 8px 10px; }
         .item { gap: 8px; padding: 8px 10px; }
-        .qty-btn { width: 24px; height: 24px; }
+        .qty-area { gap: 8px; }
+        .qty-btn { width: 26px; height: 26px; }
       }
     `;
   }
@@ -761,11 +768,12 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     this.innerHTML = `
       <style>
         .esl-ed { padding: 16px; }
-        .esl-ed .row { margin-bottom: 14px; }
-        .esl-ed label { display: block; margin-bottom: 4px; font-size: 14px; font-weight: 600; color: var(--primary-text-color); }
+        .esl-ed .row { margin-bottom: 16px; }
+        .esl-ed label { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 500; color: var(--primary-text-color); }
         .esl-ed select, .esl-ed input[type="text"] {
           width: 100%; box-sizing: border-box; padding: 10px 12px;
-          border: 1.5px solid var(--divider-color,#ddd); border-radius: 10px;
+          border: 1.5px solid var(--divider-color,#ddd);
+          border-radius: var(--ha-card-border-radius, 12px);
           background: var(--card-background-color,#fff); color: var(--primary-text-color);
           font-family: inherit; font-size: 14px;
         }
@@ -854,7 +862,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.3.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.4.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
