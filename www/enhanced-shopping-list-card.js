@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.7.1
+ * Enhanced Shopping List Card v2.7.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -517,7 +517,30 @@ class EnhancedShoppingListCard extends HTMLElement {
     const cSec = R.querySelector(".completed-section");
     cSec.style.display = completed.length ? "" : "none";
     const cList = R.querySelector(".completed-list");
-    cList.innerHTML = completed.map(i => this._htmlCompletedItem(i)).join("");
+    if (!completed.length) {
+      cList.innerHTML = "";
+    } else {
+      const catEnabled = this._getViewPref("show_categories");
+      const showHeaders = this._getViewPref("show_category_headers");
+      const hasAnyCat = catEnabled && completed.some(i => i.category);
+      let cHtml = "";
+      let lastCatC = null;
+      for (const item of completed) {
+        if (hasAnyCat && showHeaders) {
+          const cat = item.category || "";
+          if (cat !== lastCatC) {
+            if (cat) {
+              cHtml += `<div class="cat-header"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 3H4a1 1 0 00-1 1v6a1 1 0 001 1h1l5 5V3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20.5 11.5L17 8l-3 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(cat)}</div>`;
+            } else {
+              cHtml += `<div class="cat-header cat-header-none">${this._t("other")}</div>`;
+            }
+            lastCatC = cat;
+          }
+        }
+        cHtml += this._htmlCompletedItem(item);
+      }
+      cList.innerHTML = cHtml;
+    }
     this._bindItemEvents(cList, completed, true);
     this._updateCompletedVis();
   }
@@ -1655,7 +1678,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.7.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.7.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
@@ -29,9 +30,11 @@ CARD_FILENAME = "enhanced-shopping-list-card.js"
 URL_BASE = f"/{DOMAIN}"
 CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
 
-# Read version from manifest.json
+# Read version from manifest.json + file mtime for cache busting
 _MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text())
 VERSION = _MANIFEST.get("version", "0.0.0")
+_JS_PATH = Path(__file__).parent / CARD_FILENAME
+_JS_MTIME = str(int(os.path.getmtime(_JS_PATH))) if _JS_PATH.exists() else "0"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -61,15 +64,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve JS from integration directory and register as Lovelace resource."""
-    url_with_version = f"{CARD_URL}?v={VERSION}"
+    url_with_version = f"{CARD_URL}?v={VERSION}.{_JS_MTIME}"
 
     # Step 1: Register static HTTP path so HA serves the JS file
+    # cache_headers=False so browser always checks for updated file
     try:
         await hass.http.async_register_static_paths([
             StaticPathConfig(
                 url_path=URL_BASE,
                 path=str(Path(__file__).parent),
-                cache_headers=True,
+                cache_headers=False,
             )
         ])
     except RuntimeError:
