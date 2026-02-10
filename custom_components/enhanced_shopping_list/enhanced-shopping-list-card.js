@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.5.3
+ * Enhanced Shopping List Card v2.5.4
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -308,7 +308,7 @@ class EnhancedShoppingListCard extends HTMLElement {
               <button class="btn-yes">Tak</button>
               <button class="btn-no">Nie</button>
             </div>
-            <div class="completed-list" style="display:none"></div>
+            <div class="completed-list" style="height:0;overflow:hidden"></div>
           </div>
         </div>
       </ha-card>`;
@@ -392,7 +392,15 @@ class EnhancedShoppingListCard extends HTMLElement {
   _updateCompletedVis() {
     const R = this.shadowRoot;
     const l = R.querySelector(".completed-list"), ch = R.querySelector(".chevron");
-    if (l) l.style.display = this._completedExpanded ? "" : "none";
+    if (l) {
+      if (this._completedExpanded) {
+        l.style.height = "";
+        l.style.overflow = "";
+      } else {
+        l.style.height = "0";
+        l.style.overflow = "hidden";
+      }
+    }
     if (ch) ch.classList.toggle("open", this._completedExpanded);
   }
 
@@ -778,7 +786,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
       .swipe-row {
         position: relative; border-radius: var(--R);
-        overflow: -webkit-clip; overflow: clip;
+        overflow: clip;
       }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
@@ -1262,7 +1270,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.5.3 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.5.4 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
