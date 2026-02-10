@@ -91,7 +91,16 @@ class EnhancedShoppingListCard extends HTMLElement {
   set hass(hass) {
     const oldHass = this._hass;
     this._hass = hass;
-    if (!this._rendered) { this._render(); this._rendered = true; if (this._config.entity) this._fetchItems(); return; }
+    if (!this._rendered) {
+      this._render(); this._rendered = true;
+      if (this._config.entity) this._fetchItems();
+      // Delayed repaint for mobile — popup may still be animating on first load
+      setTimeout(() => {
+        const aList = this.shadowRoot.querySelector(".active-list");
+        if (aList) { aList.style.display = "none"; requestAnimationFrame(() => { aList.style.display = ""; }); }
+      }, 400);
+      return;
+    }
     const entity = this._config.entity;
     if (entity && oldHass) {
       const o = oldHass.states[entity], n = hass.states[entity];
@@ -390,12 +399,14 @@ class EnhancedShoppingListCard extends HTMLElement {
     const l = R.querySelector(".completed-list"), ch = R.querySelector(".chevron");
     if (l) l.style.display = this._completedExpanded ? "" : "none";
     if (ch) ch.classList.toggle("open", this._completedExpanded);
-    // Force repaint to fix mobile rendering after height change
-    requestAnimationFrame(() => {
-      const card = R.querySelector("ha-card");
-      if (card) { void card.offsetHeight; }
-      this.dispatchEvent(new Event("iron-resize", { bubbles: true, composed: true }));
-    });
+    // Force full repaint on mobile — toggle active-list display to break GPU cache
+    const aList = R.querySelector(".active-list");
+    if (aList) {
+      aList.style.display = "none";
+      requestAnimationFrame(() => {
+        aList.style.display = "";
+      });
+    }
   }
 
   _htmlActiveItem(item) {
@@ -533,7 +544,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         if (ts.dir === "h") {
           off = isCompleted ? Math.min(0, dx) : dx;
           itemEl.style.transition = "none";
-          itemEl.style.transform = `translateX(${off}px)`;
+          itemEl.style.transform = `translate3d(${off}px,0,0)`;
         }
       });
 
@@ -543,7 +554,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         if (off > 80 && !isCompleted) {
           itemEl.style.transform = ""; swipeRow.classList.remove("swiping"); this._toggleComplete(item);
         } else if (off < -80) {
-          itemEl.style.transform = "translateX(-80px)";
+          itemEl.style.transform = "translate3d(-80px,0,0)";
         } else {
           itemEl.style.transform = "";
           setTimeout(() => swipeRow.classList.remove("swiping"), 250);
@@ -775,6 +786,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       /* --- item tile (matching HA todo-card style) --- */
       .item-wrap {
         border-radius: var(--R); margin-bottom: 4px;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
       }
       .active-list .item-wrap:last-child,
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
@@ -792,6 +805,8 @@ class EnhancedShoppingListCard extends HTMLElement {
         padding: 4px 14px; min-height: 58px;
         border-radius: var(--R);
         touch-action: pan-y; cursor: pointer;
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
       }
       .active-list .item {
         background-color: var(--esl-active-bg);
