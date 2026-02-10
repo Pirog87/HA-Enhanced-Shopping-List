@@ -94,11 +94,6 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!this._rendered) {
       this._render(); this._rendered = true;
       if (this._config.entity) this._fetchItems();
-      // Delayed repaint for mobile — popup may still be animating on first load
-      setTimeout(() => {
-        const aList = this.shadowRoot.querySelector(".active-list");
-        if (aList) { aList.style.display = "none"; requestAnimationFrame(() => { aList.style.display = ""; }); }
-      }, 400);
       return;
     }
     const entity = this._config.entity;
@@ -399,14 +394,6 @@ class EnhancedShoppingListCard extends HTMLElement {
     const l = R.querySelector(".completed-list"), ch = R.querySelector(".chevron");
     if (l) l.style.display = this._completedExpanded ? "" : "none";
     if (ch) ch.classList.toggle("open", this._completedExpanded);
-    // Force full repaint on mobile — toggle active-list display to break GPU cache
-    const aList = R.querySelector(".active-list");
-    if (aList) {
-      aList.style.display = "none";
-      requestAnimationFrame(() => {
-        aList.style.display = "";
-      });
-    }
   }
 
   _htmlActiveItem(item) {
@@ -783,15 +770,16 @@ class EnhancedShoppingListCard extends HTMLElement {
       .cat-header-none { color: var(--secondary-text-color); }
       .active-list .cat-header:first-child { padding-top: 4px; }
 
-      /* --- item tile (matching HA todo-card style) --- */
+      /* --- item tile --- */
       .item-wrap {
         border-radius: var(--R); margin-bottom: 4px;
-        -webkit-transform: translateZ(0);
-        transform: translateZ(0);
       }
       .active-list .item-wrap:last-child,
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
-      .swipe-row { position: relative; overflow: hidden; border-radius: var(--R); }
+      .swipe-row {
+        position: relative; border-radius: var(--R);
+        overflow: -webkit-clip; overflow: clip;
+      }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
         display: flex; align-items: center;
@@ -801,12 +789,10 @@ class EnhancedShoppingListCard extends HTMLElement {
       .sw-right { left: 0; background: #43a047; padding-left: 18px; }
       .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; }
       .item {
-        position: relative; display: flex; align-items: center; gap: 12px;
-        padding: 4px 14px; min-height: 58px;
+        position: relative; display: flex; align-items: center; gap: 8px;
+        padding: 6px 10px; min-height: 48px;
         border-radius: var(--R);
         touch-action: pan-y; cursor: pointer;
-        -webkit-backface-visibility: hidden;
-        backface-visibility: hidden;
       }
       .active-list .item {
         background-color: var(--esl-active-bg);
@@ -817,8 +803,8 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- checkbox --- */
       .chk {
-        width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
-        border: 2.5px solid var(--divider-color,#ccc); cursor: pointer;
+        width: 24px; height: 24px; min-width: 24px; border-radius: 50%;
+        border: 2px solid var(--divider-color,#ccc); cursor: pointer;
         display: flex; align-items: center; justify-content: center;
         transition: all .2s; flex-shrink: 0;
       }
@@ -862,9 +848,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       .completed-item { opacity: .7; }
 
       /* --- quantity --- */
-      .qty-area { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+      .qty-area { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
       .qty-btn {
-        width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+        width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer;
         display: flex; align-items: center; justify-content: center; padding: 0;
         background: var(--primary-color); color: #fff;
         transition: all .15s ease;
@@ -872,13 +858,13 @@ class EnhancedShoppingListCard extends HTMLElement {
       .qty-btn:hover { opacity: .85; transform: scale(1.1); }
       .qty-btn:active { transform: scale(.9); }
       .qty-val {
-        min-width: 24px; text-align: center; font-size: 17px; font-weight: 700;
+        min-width: 18px; text-align: center; font-size: 15px; font-weight: 700;
         cursor: pointer; color: var(--esl-text-color); user-select: none;
       }
 
       /* --- icon buttons --- */
       .icon-btn {
-        background: none; border: none; padding: 8px; cursor: pointer;
+        background: none; border: none; padding: 4px; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
         border-radius: 50%; transition: background .15s; flex-shrink: 0;
         opacity: .65;
@@ -984,12 +970,14 @@ class EnhancedShoppingListCard extends HTMLElement {
       .completed-list { animation: fadeIn .2s ease; }
       @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
 
-      @media (max-width: 400px) {
+      @media (max-width: 500px) {
         .content { padding: 6px 8px 10px; }
-        .item { gap: 8px; padding: 8px 10px; }
-        .qty-area { gap: 8px; }
-        .qty-btn { width: 26px; height: 26px; }
-        .cat-editor, .note-editor { padding-left: 40px; }
+        .item { gap: 6px; padding: 4px 8px; }
+        .icon-btn { padding: 3px; }
+        .icon-btn svg { width: 18px; height: 18px; }
+        .qty-btn { width: 24px; height: 24px; }
+        .qty-btn svg { width: 12px; height: 12px; }
+        .cat-editor, .note-editor { padding-left: 36px; }
       }
     `;
   }
