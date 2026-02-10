@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.5.5
+ * Enhanced Shopping List Card v2.6.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -74,6 +74,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._qtyTimers = {};
     this._hass = null;
     this._rendered = false;
+    this._viewPrefs = {};
   }
 
   setConfig(config) {
@@ -229,7 +230,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _sortItems(items) {
     const sorted = [...items];
-    const catEnabled = this._config.show_categories !== false;
+    const catEnabled = this._getViewPref("show_categories");
     const hasAnyCat = catEnabled && sorted.some(i => i.category);
     if (hasAnyCat) {
       sorted.sort((a, b) => {
@@ -278,7 +279,20 @@ class EnhancedShoppingListCard extends HTMLElement {
         ${EnhancedShoppingListCard.CSS}
       </style>
       <ha-card>
-        <div class="header">${esc(title)}</div>
+        <div class="header">
+          <span class="header-title">${esc(title)}</span>
+          <div class="header-toggles">
+            <button class="hdr-toggle${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" title="Grupuj po kategoriach">
+              <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
+            <button class="hdr-toggle${this._getViewPref("show_category_badge") ? " hdr-on" : ""}" data-toggle="show_category_badge" title="Etykiety kategorii na pozycjach">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg>
+            </button>
+            <button class="hdr-toggle${this._getViewPref("show_category_headers") ? " hdr-on" : ""}" data-toggle="show_category_headers" title="Naglowki kategorii">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 10h10M4 14h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
         <div class="content">
           <div class="add-section">
             <div class="input-row">
@@ -326,6 +340,9 @@ class EnhancedShoppingListCard extends HTMLElement {
     inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); this._addCurrentInput(); } });
     inp.addEventListener("blur", () => setTimeout(() => this._hideSuggestions(), 200));
     R.querySelector(".add-btn").addEventListener("click", () => this._addCurrentInput());
+    R.querySelectorAll(".hdr-toggle").forEach(btn => {
+      btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
+    });
     R.querySelector(".completed-header").addEventListener("click", e => {
       if (e.target.closest(".clear-all-btn")) return;
       this._completedExpanded = !this._completedExpanded;
@@ -360,12 +377,13 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!active.length) {
       aList.innerHTML = '<div class="empty-msg">Lista jest pusta</div>';
     } else {
-      const catEnabled = this._config.show_categories !== false;
+      const catEnabled = this._getViewPref("show_categories");
+      const showHeaders = this._getViewPref("show_category_headers");
       const hasAnyCat = catEnabled && active.some(i => i.category);
       let html = "";
       let lastCat = null;
       for (const item of active) {
-        if (hasAnyCat) {
+        if (hasAnyCat && showHeaders) {
           const cat = item.category || "";
           if (cat !== lastCat) {
             if (cat) {
@@ -404,10 +422,44 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (ch) ch.classList.toggle("open", this._completedExpanded);
   }
 
+  /* ---------- view preferences (localStorage-backed) ---------- */
+
+  _getViewPref(key) {
+    if (key in this._viewPrefs) return this._viewPrefs[key];
+    const entity = this._config.entity || "default";
+    const stored = localStorage.getItem(`esl_${entity}_${key}`);
+    if (stored !== null) return stored === "true";
+    switch (key) {
+      case "show_categories": return this._config.show_categories !== false;
+      case "show_category_badge": return this._config.show_category_badge !== false;
+      case "show_category_headers": return this._config.show_category_headers !== false;
+      case "show_notes": return this._config.show_notes !== false;
+      default: return true;
+    }
+  }
+
+  _toggleViewPref(key) {
+    const val = !this._getViewPref(key);
+    this._viewPrefs[key] = val;
+    const entity = this._config.entity || "default";
+    localStorage.setItem(`esl_${entity}_${key}`, String(val));
+    this._updateHeaderToggles();
+    this._updateLists();
+  }
+
+  _updateHeaderToggles() {
+    const R = this.shadowRoot; if (!R) return;
+    R.querySelectorAll(".hdr-toggle").forEach(btn => {
+      const key = btn.dataset.toggle;
+      btn.classList.toggle("hdr-on", this._getViewPref(key));
+    });
+  }
+
   _htmlActiveItem(item) {
+    const showNotes = this._getViewPref("show_notes");
     const hn = item.notes ? " has-note" : "";
     const hc = item.category ? " has-cat" : "";
-    const showBadge = this._config.show_category_badge !== false;
+    const showBadge = this._getViewPref("show_category_badge");
     const catBadge = (item.category && showBadge)
       ? `<span class="cat-badge" data-action="edit-category">${esc(item.category)}</span>` : "";
     const notePreview = item.notes
@@ -416,7 +468,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     <div class="item-wrap" data-uid="${item.uid}">
       <div class="swipe-row">
         <div class="sw-bg sw-right"><svg viewBox="0 0 24 24" width="22" height="22"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <div class="sw-bg sw-left"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
+        <div class="sw-bg sw-left" data-action="swipe-delete"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
         <div class="item" data-uid="${item.uid}">
           <div class="chk" data-action="toggle"><div class="chk-inner"></div></div>
           <div class="item-body">
@@ -429,9 +481,9 @@ class EnhancedShoppingListCard extends HTMLElement {
           <button class="icon-btn cat-btn${hc}" data-action="edit-category" title="${item.category || "Kategoria"}">
             <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="${item.category ? "var(--primary-color)" : "none"}" stroke="${item.category ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.5" fill="${item.category ? "#fff" : "var(--esl-icon-color)"}"/></svg>
           </button>
-          <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
+          ${showNotes ? `<button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
             <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/></svg>
-          </button>
+          </button>` : ""}
           <div class="qty-area">
             <button class="qty-btn" data-action="qty-minus">
               <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
@@ -461,7 +513,7 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _htmlCompletedItem(item) {
-    const showBadge = this._config.show_category_badge !== false;
+    const showBadge = this._getViewPref("show_category_badge");
     const catBadge = (item.category && showBadge)
       ? `<span class="cat-badge cat-badge-done">${esc(item.category)}</span>` : "";
     return `
@@ -495,8 +547,30 @@ class EnhancedShoppingListCard extends HTMLElement {
       const item = items.find(i => i.uid === uid);
       if (!item) return;
 
-      el.querySelector(".swipe-row").addEventListener("click", e => {
+      const itemEl = el.querySelector(".item");
+      const swipeRow = el.querySelector(".swipe-row");
+
+      swipeRow.addEventListener("click", e => {
         const a = e.target.closest("[data-action]");
+
+        // Swipe-delete: revealed red area clicked
+        if (a && a.dataset.action === "swipe-delete") {
+          e.stopPropagation();
+          itemEl.style.transition = "transform 0.25s ease";
+          itemEl.style.transform = "";
+          swipeRow.className = "swipe-row";
+          this._removeItem(item);
+          return;
+        }
+
+        // If item is stuck (swiped), clicking item resets it
+        if (swipeRow.classList.contains("swiping-left") && itemEl.style.transform) {
+          itemEl.style.transition = "transform 0.25s ease";
+          itemEl.style.transform = "";
+          setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
+          return;
+        }
+
         if (!a) { if (isCompleted) this._toggleComplete(item); return; }
         e.stopPropagation();
         switch (a.dataset.action) {
@@ -512,16 +586,18 @@ class EnhancedShoppingListCard extends HTMLElement {
       });
 
       // Pointer-based swipe (works on both touch and mouse)
-      const itemEl = el.querySelector(".item");
-      const swipeRow = el.querySelector(".swipe-row");
       let ts = null, off = 0;
+
+      const resetOtherSwipes = () => {
+        container.querySelectorAll(".item").forEach(o => { if (o !== itemEl) o.style.transform = ""; });
+        container.querySelectorAll(".swipe-row").forEach(r => { if (r !== swipeRow) r.className = "swipe-row"; });
+      };
 
       itemEl.addEventListener("pointerdown", e => {
         if (e.button !== 0) return;
         ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
         off = 0;
-        container.querySelectorAll(".item").forEach(o => { if (o !== itemEl) o.style.transform = ""; });
-        container.querySelectorAll(".swipe-row").forEach(r => { if (r !== swipeRow) r.classList.remove("swiping"); });
+        resetOtherSwipes();
       });
 
       itemEl.addEventListener("pointermove", e => {
@@ -532,12 +608,17 @@ class EnhancedShoppingListCard extends HTMLElement {
             ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
             if (ts.dir === "h") {
               try { itemEl.setPointerCapture(e.pointerId); } catch(_) {}
-              swipeRow.classList.add("swiping");
             } else { ts = null; return; }
           } else return;
         }
         if (ts.dir === "h") {
           off = isCompleted ? Math.min(0, dx) : dx;
+          // Show correct background based on direction
+          if (off > 0) {
+            swipeRow.className = "swipe-row swiping-right";
+          } else if (off < 0) {
+            swipeRow.className = "swipe-row swiping-left";
+          }
           itemEl.style.transition = "none";
           itemEl.style.transform = `translate3d(${off}px,0,0)`;
         }
@@ -547,12 +628,17 @@ class EnhancedShoppingListCard extends HTMLElement {
         if (!ts) return;
         itemEl.style.transition = "transform 0.25s ease";
         if (off > 80 && !isCompleted) {
-          itemEl.style.transform = ""; swipeRow.classList.remove("swiping"); this._toggleComplete(item);
+          // Right swipe: complete
+          itemEl.style.transform = "";
+          swipeRow.className = "swipe-row";
+          this._toggleComplete(item);
         } else if (off < -80) {
+          // Left swipe: reveal delete — item sticks at -80px
           itemEl.style.transform = "translate3d(-80px,0,0)";
+          // Keep swiping-left class so red bg stays visible
         } else {
           itemEl.style.transform = "";
-          setTimeout(() => swipeRow.classList.remove("swiping"), 250);
+          setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
         }
         ts = null;
       };
@@ -560,7 +646,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       itemEl.addEventListener("pointercancel", () => {
         if (ts) {
           itemEl.style.transition = "transform 0.25s ease"; itemEl.style.transform = "";
-          setTimeout(() => swipeRow.classList.remove("swiping"), 250);
+          setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
           ts = null;
         }
       });
@@ -709,7 +795,18 @@ class EnhancedShoppingListCard extends HTMLElement {
     return `
       :host { --R: var(--ha-card-border-radius, 12px); }
       ha-card { overflow: visible; }
-      .header { padding: 16px 20px 4px; font-size: 20px; font-weight: 500; color: var(--primary-text-color); }
+      .header {
+        padding: 16px 20px 4px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      }
+      .header-title { font-size: 20px; font-weight: 500; color: var(--primary-text-color); }
+      .header-toggles { display: flex; gap: 2px; flex-shrink: 0; }
+      .hdr-toggle {
+        background: none; border: none; padding: 6px; cursor: pointer;
+        border-radius: 8px; display: flex; align-items: center; justify-content: center;
+        color: var(--disabled-text-color, #999); transition: all .15s; opacity: .5;
+      }
+      .hdr-toggle:hover { background: rgba(128,128,128,.12); opacity: .8; }
+      .hdr-toggle.hdr-on { color: var(--primary-color); opacity: 1; }
       .content { padding: 8px 12px 12px; }
 
       /* --- add --- */
@@ -739,8 +836,8 @@ class EnhancedShoppingListCard extends HTMLElement {
         box-shadow: 0 6px 16px rgba(0,0,0,.12); overflow: hidden;
       }
       .sg-item {
-        padding: 10px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-        font-size: 14px; transition: background .12s;
+        padding: 13px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+        font-size: 15px; transition: background .12s; min-height: 44px; box-sizing: border-box;
       }
       .sg-item:hover { background: var(--secondary-background-color,#f5f5f5); }
       .sg-name { flex: 1; }
@@ -793,9 +890,10 @@ class EnhancedShoppingListCard extends HTMLElement {
         border-radius: var(--R);
         opacity: 0; transition: opacity .15s;
       }
-      .swipe-row.swiping .sw-bg { opacity: 1; }
+      .swipe-row.swiping-right .sw-right { opacity: 1; }
+      .swipe-row.swiping-left .sw-left { opacity: 1; }
       .sw-right { left: 0; background: #43a047; padding-left: 18px; }
-      .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; }
+      .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; cursor: pointer; }
       .item {
         position: relative; display: flex; align-items: center; gap: 8px;
         padding: 6px 10px; min-height: 48px;
@@ -1032,6 +1130,8 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     const iconColor = this._config.icon_color || "";
     const showCat = this._config.show_categories !== false;
     const showBadge = this._config.show_category_badge !== false;
+    const showHeaders = this._config.show_category_headers !== false;
+    const showNotes = this._config.show_notes !== false;
 
     this.innerHTML = `
       <style>
@@ -1049,14 +1149,14 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         /* --- swatch color picker --- */
         .color-section { margin-top: 4px; }
         .color-swatches {
-          display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 8px;
+          display: grid; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap: 4px; margin-bottom: 8px;
         }
         .color-swatch {
-          width: 100%; aspect-ratio: 1; border-radius: 8px; border: 2.5px solid transparent;
+          width: 100%; aspect-ratio: 1; border-radius: 6px; border: 2px solid transparent;
           cursor: pointer; transition: transform .12s, border-color .12s;
         }
-        .color-swatch:hover { transform: scale(1.15); }
-        .color-swatch.active { border-color: var(--primary-text-color); transform: scale(1.15); }
+        .color-swatch:hover { transform: scale(1.12); }
+        .color-swatch.active { border-color: var(--primary-text-color); transform: scale(1.12); }
         .color-swatch-none {
           background: var(--card-background-color, #fff) !important;
           border: 2.5px dashed var(--divider-color, #ccc);
@@ -1162,6 +1262,18 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <input type="checkbox" id="esl-chk-badge" ${showBadge ? "checked" : ""} />
             <span class="check-label">Pokazuj nazwe kategorii na pozycji</span>
           </div>
+          <div class="check-row" id="esl-chk-headers-row">
+            <input type="checkbox" id="esl-chk-headers" ${showHeaders ? "checked" : ""} />
+            <span class="check-label">Pokazuj naglowki grupowania kategorii</span>
+          </div>
+        </div>
+        <hr class="sep"/>
+        <div class="row">
+          <label>Widok</label>
+          <div class="check-row" id="esl-chk-notes-row">
+            <input type="checkbox" id="esl-chk-notes" ${showNotes ? "checked" : ""} />
+            <span class="check-label">Pokazuj ikone notatki na pozycjach</span>
+          </div>
         </div>
       </div>`;
     this._populateEntities();
@@ -1188,14 +1300,19 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     this.querySelector("#esl-chk-badge").addEventListener("change", e => {
       this._config = { ...this._config, show_category_badge: e.target.checked }; this._fire();
     });
-    // Make entire row clickable
-    this.querySelector("#esl-chk-cat-row").addEventListener("click", e => {
-      if (e.target.type === "checkbox") return;
-      const cb = this.querySelector("#esl-chk-cat"); cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
+    this.querySelector("#esl-chk-headers").addEventListener("change", e => {
+      this._config = { ...this._config, show_category_headers: e.target.checked }; this._fire();
     });
-    this.querySelector("#esl-chk-badge-row").addEventListener("click", e => {
-      if (e.target.type === "checkbox") return;
-      const cb = this.querySelector("#esl-chk-badge"); cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
+    this.querySelector("#esl-chk-notes").addEventListener("change", e => {
+      this._config = { ...this._config, show_notes: e.target.checked }; this._fire();
+    });
+    // Make entire row clickable
+    ["esl-chk-cat-row", "esl-chk-badge-row", "esl-chk-headers-row", "esl-chk-notes-row"].forEach(rowId => {
+      this.querySelector(`#${rowId}`).addEventListener("click", e => {
+        if (e.target.type === "checkbox") return;
+        const cb = this.querySelector(`#${rowId} input[type="checkbox"]`);
+        cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
+      });
     });
   }
 
@@ -1270,7 +1387,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.5.5 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.6.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
