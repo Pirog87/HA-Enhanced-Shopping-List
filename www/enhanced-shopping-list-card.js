@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.6.1
+ * Enhanced Shopping List Card v2.6.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -556,14 +556,19 @@ class EnhancedShoppingListCard extends HTMLElement {
       swipeRow.addEventListener("click", e => {
         const a = e.target.closest("[data-action]");
 
-        // Swipe-delete: revealed red area clicked
+        // Swipe-delete: revealed red area clicked → show confirmation
         if (a && a.dataset.action === "swipe-delete") {
           e.stopPropagation();
-          itemEl.style.transition = "transform 0.25s ease";
-          itemEl.style.transform = "";
-          swipeRow.className = "swipe-row";
-          this._removeItem(item);
+          this._showDeleteConfirm(item, el, itemEl, swipeRow);
           return;
+        }
+
+        // Confirmation button clicks
+        if (e.target.closest(".dc-yes")) {
+          e.stopPropagation(); return;
+        }
+        if (e.target.closest(".dc-no")) {
+          e.stopPropagation(); return;
         }
 
         // If item is stuck (swiped), clicking item resets it
@@ -584,7 +589,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           case "edit-qty": this._startEditQty(el, item); break;
           case "toggle-note": this._toggleNoteEditor(el, item); break;
           case "edit-category": if (!isCompleted) this._toggleCategoryEditor(el, item); break;
-          case "delete": this._removeItem(item); break;
+          case "delete": this._showDeleteConfirm(item, el, itemEl, swipeRow); break;
         }
       });
 
@@ -595,10 +600,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         swLeft.addEventListener("click", (e) => {
           if (!swipeRow.classList.contains("swiping-left")) return;
           e.stopPropagation();
-          itemEl.style.transition = "transform 0.25s ease";
-          itemEl.style.transform = "";
-          swipeRow.className = "swipe-row";
-          this._removeItem(item);
+          this._showDeleteConfirm(item, el, itemEl, swipeRow);
         });
       }
 
@@ -608,15 +610,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       const resetOtherSwipes = () => {
         container.querySelectorAll(".item").forEach(o => { if (o !== itemEl) o.style.transform = ""; });
         container.querySelectorAll(".swipe-row").forEach(r => { if (r !== swipeRow) r.className = "swipe-row"; });
-      };
-
-      const doDelete = () => {
-        itemEl.style.transition = "transform 0.25s ease";
-        itemEl.style.transform = "translate3d(-100%,0,0)";
-        setTimeout(() => {
-          swipeRow.className = "swipe-row";
-          this._removeItem(item);
-        }, 250);
+        // Also remove any lingering confirm overlays
+        container.querySelectorAll(".delete-confirm").forEach(o => o.remove());
       };
 
       itemEl.addEventListener("pointerdown", e => {
@@ -657,14 +652,13 @@ class EnhancedShoppingListCard extends HTMLElement {
           itemEl.style.transform = "";
           swipeRow.className = "swipe-row";
           this._toggleComplete(item);
-        } else if (off < -150) {
-          // Long left swipe: delete directly
-          ts = null;
-          doDelete();
-          return;
         } else if (off < -80) {
-          // Short left swipe: reveal delete button, wait for tap
-          itemEl.style.transform = "translate3d(-80px,0,0)";
+          // Left swipe: show delete confirmation
+          ts = null;
+          itemEl.style.transform = "";
+          swipeRow.className = "swipe-row";
+          this._showDeleteConfirm(item, el, itemEl, swipeRow);
+          return;
         } else {
           itemEl.style.transform = "";
           setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
@@ -780,6 +774,36 @@ class EnhancedShoppingListCard extends HTMLElement {
         });
       }
     }
+  }
+
+  /* ---------- delete confirmation ---------- */
+
+  _showDeleteConfirm(item, wrapEl, itemEl, swipeRow) {
+    // Reset swipe state
+    if (itemEl) { itemEl.style.transition = "transform 0.25s ease"; itemEl.style.transform = ""; }
+    if (swipeRow) setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
+    // Remove any existing confirm overlays in the card
+    this.shadowRoot.querySelectorAll(".delete-confirm").forEach(o => o.remove());
+    // Create overlay
+    const overlay = document.createElement("div");
+    overlay.className = "delete-confirm";
+    overlay.innerHTML = `
+      <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      <span class="dc-text">Usunac <b>${esc(item.name)}</b>?</span>
+      <button class="dc-yes">Tak</button>
+      <button class="dc-no">Nie</button>
+    `;
+    wrapEl.appendChild(overlay);
+    overlay.querySelector(".dc-yes").addEventListener("click", (e) => {
+      e.stopPropagation();
+      overlay.style.opacity = "0";
+      setTimeout(() => { overlay.remove(); this._removeItem(item); }, 200);
+    });
+    overlay.querySelector(".dc-no").addEventListener("click", (e) => {
+      e.stopPropagation();
+      overlay.style.opacity = "0";
+      setTimeout(() => overlay.remove(), 200);
+    });
   }
 
   /* ---------- suggestions ---------- */
@@ -906,7 +930,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- item tile --- */
       .item-wrap {
-        border-radius: var(--R); margin-bottom: 4px;
+        position: relative; border-radius: var(--R); margin-bottom: 4px;
       }
       .active-list .item-wrap:last-child,
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
@@ -1104,6 +1128,31 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       .completed-list { animation: fadeIn .2s ease; }
       @keyframes fadeIn { from { opacity:0; transform:translateY(-4px); } to { opacity:1; transform:translateY(0); } }
+
+      /* --- delete confirmation overlay --- */
+      .delete-confirm {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(229,57,53,0.92); border-radius: var(--R);
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+        z-index: 10; animation: fadeIn .15s ease;
+        padding: 0 12px; box-sizing: border-box;
+        transition: opacity .2s;
+      }
+      .delete-confirm svg { flex-shrink: 0; }
+      .dc-text {
+        color: #fff; font-size: 13px; font-weight: 500;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        flex: 1; min-width: 0;
+      }
+      .dc-yes, .dc-no {
+        padding: 7px 16px; border-radius: 8px; border: none;
+        font-size: 13px; font-weight: 700; cursor: pointer;
+        white-space: nowrap; flex-shrink: 0; transition: opacity .12s;
+      }
+      .dc-yes { background: #fff; color: #e53935; }
+      .dc-yes:hover { opacity: .85; }
+      .dc-no { background: rgba(255,255,255,.2); color: #fff; }
+      .dc-no:hover { background: rgba(255,255,255,.35); }
 
       @media (max-width: 500px) {
         .content { padding: 6px 8px 10px; }
@@ -1416,7 +1465,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.6.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.6.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
