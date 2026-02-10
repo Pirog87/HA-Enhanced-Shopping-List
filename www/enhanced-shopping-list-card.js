@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.7.2
+ * Enhanced Shopping List Card v2.7.3
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -428,9 +428,20 @@ class EnhancedShoppingListCard extends HTMLElement {
           <div class="section completed-section" style="display:none">
             <div class="section-title completed-header">
               <span>${this._t("bought")} <span class="badge-count completed-count">0</span> <span class="chevron">&#9660;</span></span>
-              <button class="clear-all-btn" title="${this._t("clear_bought")}">
-                <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
-              </button>
+              <div class="done-toggles">
+                <button class="hdr-toggle hdr-toggle-sm${this._getViewPref("show_categories_done") ? " hdr-on" : ""}" data-toggle="show_categories_done" title="${this._t("toggle_group")}">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+                </button>
+                <button class="hdr-toggle hdr-toggle-sm${this._getViewPref("show_category_badge_done") ? " hdr-on" : ""}" data-toggle="show_category_badge_done" title="${this._t("toggle_badge")}">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg>
+                </button>
+                <button class="hdr-toggle hdr-toggle-sm${this._getViewPref("show_category_headers_done") ? " hdr-on" : ""}" data-toggle="show_category_headers_done" title="${this._t("toggle_headers")}">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><path d="M4 6h16M4 10h10M4 14h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                </button>
+                <button class="clear-all-btn" title="${this._t("clear_bought")}">
+                  <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+                </button>
+              </div>
             </div>
             <div class="confirm-bar" style="display:none">
               <span>${this._t("confirm_clear")}</span>
@@ -459,7 +470,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
     });
     R.querySelector(".completed-header").addEventListener("click", e => {
-      if (e.target.closest(".clear-all-btn")) return;
+      if (e.target.closest(".clear-all-btn") || e.target.closest(".hdr-toggle")) return;
       this._completedExpanded = !this._completedExpanded;
       this._updateCompletedVis();
     });
@@ -520,8 +531,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!completed.length) {
       cList.innerHTML = "";
     } else {
-      const catEnabled = this._getViewPref("show_categories");
-      const showHeaders = this._getViewPref("show_category_headers");
+      const catEnabled = this._getViewPref("show_categories_done");
+      const showHeaders = this._getViewPref("show_category_headers_done");
       const hasAnyCat = catEnabled && completed.some(i => i.category);
       let cHtml = "";
       let lastCatC = null;
@@ -572,6 +583,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       case "show_category_badge": return this._config.show_category_badge !== false;
       case "show_category_headers": return this._config.show_category_headers !== false;
       case "show_notes": return this._config.show_notes !== false;
+      case "show_categories_done": return this._config.show_categories !== false;
+      case "show_category_badge_done": return this._config.show_category_badge !== false;
+      case "show_category_headers_done": return this._config.show_category_headers !== false;
       default: return true;
     }
   }
@@ -651,7 +665,7 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _htmlCompletedItem(item) {
-    const showBadge = this._getViewPref("show_category_badge");
+    const showBadge = this._getViewPref("show_category_badge_done");
     const catBadge = (item.category && showBadge)
       ? `<span class="cat-badge cat-badge-done">${esc(item.category)}</span>` : "";
     return `
@@ -995,6 +1009,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .hdr-toggle:hover { background: rgba(128,128,128,.12); opacity: .8; }
       .hdr-toggle.hdr-on { color: var(--primary-color); opacity: 1; }
+      .hdr-toggle-sm { padding: 4px; }
+      .hdr-toggle-sm svg { width: 14px; height: 14px; }
+      .done-toggles { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
       .content { padding: 8px 12px 12px; }
 
       /* --- add --- */
@@ -1678,7 +1695,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.7.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.7.3 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
