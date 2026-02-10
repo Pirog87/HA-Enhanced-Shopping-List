@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.7.0
+ * Enhanced Shopping List Card v2.7.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -104,6 +104,10 @@ const STRINGS = {
     ed_show_headers: "Pokazuj nagłówki grupowania kategorii",
     ed_view: "Widok",
     ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
+    ed_item_size: "Rozmiar pozycji",
+    ed_size_compact: "Kompaktowy",
+    ed_size_normal: "Normalny",
+    ed_size_comfortable: "Wygodny",
     ed_hex_placeholder: "#rrggbb lub none",
     ed_auto: "auto",
     ed_auto_placeholder: "auto lub #rrggbb",
@@ -150,6 +154,10 @@ const STRINGS = {
     ed_show_headers: "Show category group headers",
     ed_view: "View",
     ed_show_notes: "Show note icon on items",
+    ed_item_size: "Item size",
+    ed_size_compact: "Compact",
+    ed_size_normal: "Normal",
+    ed_size_comfortable: "Comfortable",
     ed_hex_placeholder: "#rrggbb or none",
     ed_auto: "auto",
     ed_auto_placeholder: "auto or #rrggbb",
@@ -369,6 +377,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     const doneBg = isDoneNone ? "var(--secondary-background-color, rgba(128,128,128,0.06))" : `rgba(${doneRgb}, 0.35)`;
     const textColor = this._config.text_color || "";
     const iconColor = this._config.icon_color || "";
+    const sizeClass = this._config.item_size && this._config.item_size !== "normal" ? ` size-${this._config.item_size}` : "";
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -381,7 +390,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         }
         ${EnhancedShoppingListCard.CSS}
       </style>
-      <ha-card>
+      <ha-card class="${sizeClass.trim()}">
         <div class="header">
           <span class="header-title">${esc(title)}</span>
           <div class="header-toggles">
@@ -1257,6 +1266,37 @@ class EnhancedShoppingListCard extends HTMLElement {
       .dc-no { background: rgba(255,255,255,.2); color: #fff; }
       .dc-no:hover { background: rgba(255,255,255,.35); }
 
+      /* --- compact size --- */
+      .size-compact .item { padding: 2px 8px; min-height: 36px; gap: 6px; }
+      .size-compact .item-name { font-size: 14px; }
+      .size-compact .chk { width: 20px; height: 20px; min-width: 20px; }
+      .size-compact .chk-done svg { width: 13px; height: 13px; }
+      .size-compact .qty-btn { width: 22px; height: 22px; }
+      .size-compact .qty-btn svg { width: 12px; height: 12px; }
+      .size-compact .qty-val { font-size: 13px; min-width: 14px; }
+      .size-compact .icon-btn { padding: 2px; }
+      .size-compact .icon-btn svg { width: 17px; height: 17px; }
+      .size-compact .item-wrap { margin-bottom: 2px; }
+      .size-compact .cat-badge { font-size: 10px; padding: 1px 6px; }
+      .size-compact .note-preview { font-size: 12px; }
+      .size-compact .cat-header { padding: 10px 4px 4px; font-size: 12px; }
+      .size-compact .done-qty { font-size: 12px; }
+
+      /* --- comfortable size --- */
+      .size-comfortable .item { padding: 10px 14px; min-height: 58px; gap: 10px; }
+      .size-comfortable .item-name { font-size: 17px; }
+      .size-comfortable .chk { width: 28px; height: 28px; min-width: 28px; }
+      .size-comfortable .qty-btn { width: 30px; height: 30px; }
+      .size-comfortable .qty-btn svg { width: 16px; height: 16px; }
+      .size-comfortable .qty-val { font-size: 17px; min-width: 22px; }
+      .size-comfortable .icon-btn { padding: 6px; }
+      .size-comfortable .icon-btn svg { width: 22px; height: 22px; }
+      .size-comfortable .item-wrap { margin-bottom: 6px; }
+      .size-comfortable .cat-badge { font-size: 12px; padding: 3px 10px; }
+      .size-comfortable .note-preview { font-size: 15px; }
+      .size-comfortable .cat-header { padding: 16px 4px 8px; font-size: 14px; }
+      .size-comfortable .done-qty { font-size: 14px; }
+
       @media (max-width: 500px) {
         .content { padding: 6px 8px 10px; }
         .item { gap: 6px; padding: 4px 8px; }
@@ -1265,6 +1305,10 @@ class EnhancedShoppingListCard extends HTMLElement {
         .qty-btn { width: 24px; height: 24px; }
         .qty-btn svg { width: 12px; height: 12px; }
         .cat-editor, .note-editor { padding-left: 36px; }
+        /* compact stays compact on mobile */
+        .size-compact .item { padding: 2px 6px; }
+        /* comfortable tones down slightly on mobile */
+        .size-comfortable .item { padding: 8px 10px; min-height: 52px; }
       }
     `;
   }
@@ -1314,6 +1358,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     const showBadge = this._config.show_category_badge !== false;
     const showHeaders = this._config.show_category_headers !== false;
     const showNotes = this._config.show_notes !== false;
+    const itemSize = this._config.item_size || "normal";
 
     this.innerHTML = `
       <style>
@@ -1374,6 +1419,21 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           cursor: pointer; flex-shrink: 0;
         }
         .check-label { font-size: 14px; color: var(--primary-text-color); }
+        /* --- size picker --- */
+        .size-picker { display: flex; gap: 8px; margin-top: 4px; }
+        .size-btn {
+          flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+          padding: 10px 6px; border-radius: 10px; cursor: pointer;
+          border: 2px solid var(--divider-color, #ddd);
+          background: var(--card-background-color, #fff);
+          color: var(--secondary-text-color); font-size: 12px; font-family: inherit;
+          transition: all .15s;
+        }
+        .size-btn:hover { border-color: var(--primary-color); opacity: .85; }
+        .size-btn.size-active {
+          border-color: var(--primary-color); background: rgba(var(--rgb-primary-color, 33,150,243), 0.08);
+          color: var(--primary-color); font-weight: 600;
+        }
       </style>
       <div class="esl-ed">
         <div class="row">
@@ -1457,6 +1517,23 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <span class="check-label">${this._t("ed_show_notes")}</span>
           </div>
         </div>
+        <div class="row">
+          <label>${this._t("ed_item_size")}</label>
+          <div class="size-picker" id="esl-size-picker">
+            <button class="size-btn${itemSize === "compact" ? " size-active" : ""}" data-size="compact">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="5" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="10.75" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="16.5" width="18" height="2.5" rx="1" fill="currentColor"/></svg>
+              <span>${this._t("ed_size_compact")}</span>
+            </button>
+            <button class="size-btn${itemSize === "normal" ? " size-active" : ""}" data-size="normal">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="4" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="10.5" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="17" width="18" height="3" rx="1" fill="currentColor"/></svg>
+              <span>${this._t("ed_size_normal")}</span>
+            </button>
+            <button class="size-btn${itemSize === "comfortable" ? " size-active" : ""}" data-size="comfortable">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="3" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="10" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="17" width="18" height="4" rx="1.5" fill="currentColor"/></svg>
+              <span>${this._t("ed_size_comfortable")}</span>
+            </button>
+          </div>
+        </div>
       </div>`;
     this._populateEntities();
 
@@ -1494,6 +1571,15 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         if (e.target.type === "checkbox") return;
         const cb = this.querySelector(`#${rowId} input[type="checkbox"]`);
         cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
+      });
+    });
+
+    // Size picker
+    this.querySelectorAll("#esl-size-picker .size-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._config = { ...this._config, item_size: btn.dataset.size }; this._fire();
+        this.querySelectorAll("#esl-size-picker .size-btn").forEach(b => b.classList.remove("size-active"));
+        btn.classList.add("size-active");
       });
     });
   }
@@ -1569,7 +1655,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.7.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.7.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
