@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.6.0
+ * Enhanced Shopping List Card v2.6.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -290,6 +290,9 @@ class EnhancedShoppingListCard extends HTMLElement {
             </button>
             <button class="hdr-toggle${this._getViewPref("show_category_headers") ? " hdr-on" : ""}" data-toggle="show_category_headers" title="Naglowki kategorii">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 10h10M4 14h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="Ikona notatki na pozycjach">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
           </div>
         </div>
@@ -585,12 +588,35 @@ class EnhancedShoppingListCard extends HTMLElement {
         }
       });
 
+      // Direct click handler on delete area (mobile touch events often suppress
+      // delegated clicks after swipe gestures, so we bind directly)
+      const swLeft = swipeRow.querySelector(".sw-left");
+      if (swLeft) {
+        swLeft.addEventListener("click", (e) => {
+          if (!swipeRow.classList.contains("swiping-left")) return;
+          e.stopPropagation();
+          itemEl.style.transition = "transform 0.25s ease";
+          itemEl.style.transform = "";
+          swipeRow.className = "swipe-row";
+          this._removeItem(item);
+        });
+      }
+
       // Pointer-based swipe (works on both touch and mouse)
       let ts = null, off = 0;
 
       const resetOtherSwipes = () => {
         container.querySelectorAll(".item").forEach(o => { if (o !== itemEl) o.style.transform = ""; });
         container.querySelectorAll(".swipe-row").forEach(r => { if (r !== swipeRow) r.className = "swipe-row"; });
+      };
+
+      const doDelete = () => {
+        itemEl.style.transition = "transform 0.25s ease";
+        itemEl.style.transform = "translate3d(-100%,0,0)";
+        setTimeout(() => {
+          swipeRow.className = "swipe-row";
+          this._removeItem(item);
+        }, 250);
       };
 
       itemEl.addEventListener("pointerdown", e => {
@@ -613,7 +639,6 @@ class EnhancedShoppingListCard extends HTMLElement {
         }
         if (ts.dir === "h") {
           off = isCompleted ? Math.min(0, dx) : dx;
-          // Show correct background based on direction
           if (off > 0) {
             swipeRow.className = "swipe-row swiping-right";
           } else if (off < 0) {
@@ -632,10 +657,14 @@ class EnhancedShoppingListCard extends HTMLElement {
           itemEl.style.transform = "";
           swipeRow.className = "swipe-row";
           this._toggleComplete(item);
+        } else if (off < -150) {
+          // Long left swipe: delete directly
+          ts = null;
+          doDelete();
+          return;
         } else if (off < -80) {
-          // Left swipe: reveal delete — item sticks at -80px
+          // Short left swipe: reveal delete button, wait for tap
           itemEl.style.transform = "translate3d(-80px,0,0)";
-          // Keep swiping-left class so red bg stays visible
         } else {
           itemEl.style.transform = "";
           setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
@@ -1387,7 +1416,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.6.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.6.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
