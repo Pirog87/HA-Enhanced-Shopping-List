@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.5.2
+ * Enhanced Shopping List Card v2.5.3
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -257,6 +257,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     const doneRgb = isDoneNone ? "128,128,128" : this._hexToRgb(doneColor);
     const activeBg = isActiveNone ? "var(--secondary-background-color, rgba(128,128,128,0.06))" : `rgba(${activeRgb}, 0.35)`;
     const doneBg = isDoneNone ? "var(--secondary-background-color, rgba(128,128,128,0.06))" : `rgba(${doneRgb}, 0.35)`;
+    const textColor = this._config.text_color || "";
+    const iconColor = this._config.icon_color || "";
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -264,6 +266,8 @@ class EnhancedShoppingListCard extends HTMLElement {
           --esl-done-rgb: ${doneRgb};
           --esl-active-bg: ${activeBg};
           --esl-done-bg: ${doneBg};
+          --esl-text-color: ${textColor || "var(--primary-text-color)"};
+          --esl-icon-color: ${iconColor || "var(--secondary-text-color)"};
         }
         ${EnhancedShoppingListCard.CSS}
       </style>
@@ -384,6 +388,12 @@ class EnhancedShoppingListCard extends HTMLElement {
     const l = R.querySelector(".completed-list"), ch = R.querySelector(".chevron");
     if (l) l.style.display = this._completedExpanded ? "" : "none";
     if (ch) ch.classList.toggle("open", this._completedExpanded);
+    // Force repaint to fix mobile rendering after height change
+    requestAnimationFrame(() => {
+      const card = R.querySelector("ha-card");
+      if (card) { void card.offsetHeight; }
+      this.dispatchEvent(new Event("iron-resize", { bubbles: true, composed: true }));
+    });
   }
 
   _htmlActiveItem(item) {
@@ -409,10 +419,10 @@ class EnhancedShoppingListCard extends HTMLElement {
             ${notePreview}
           </div>
           <button class="icon-btn cat-btn${hc}" data-action="edit-category" title="${item.category || "Kategoria"}">
-            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="${item.category ? "var(--primary-color)" : "none"}" stroke="${item.category ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.5" fill="${item.category ? "#fff" : "var(--disabled-text-color,#999)"}"/></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="${item.category ? "var(--primary-color)" : "none"}" stroke="${item.category ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.5" fill="${item.category ? "#fff" : "var(--esl-icon-color)"}"/></svg>
           </button>
           <button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
-            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--disabled-text-color,#999)"}" stroke-width="1.5"/></svg>
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/></svg>
           </button>
           <div class="qty-area">
             <button class="qty-btn" data-action="qty-minus">
@@ -762,7 +772,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       /* --- item tile (matching HA todo-card style) --- */
       .item-wrap {
-        border-radius: var(--R); margin-bottom: 8px; overflow: hidden;
+        border-radius: var(--R); margin-bottom: 4px;
       }
       .active-list .item-wrap:last-child,
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
@@ -779,7 +789,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         position: relative; display: flex; align-items: center; gap: 12px;
         padding: 4px 14px; min-height: 58px;
         border-radius: var(--R);
-        z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: pointer;
+        touch-action: pan-y; cursor: pointer;
       }
       .active-list .item {
         background-color: var(--esl-active-bg);
@@ -810,7 +820,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .item-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .item-name {
         flex: 1; min-width: 0;
-        font-size: 16px; font-weight: 500; color: var(--primary-text-color); cursor: pointer;
+        font-size: 16px; font-weight: 500; color: var(--esl-text-color); cursor: pointer;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .cat-badge {
@@ -846,7 +856,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .qty-btn:active { transform: scale(.9); }
       .qty-val {
         min-width: 24px; text-align: center; font-size: 17px; font-weight: 700;
-        cursor: pointer; color: var(--primary-text-color); user-select: none;
+        cursor: pointer; color: var(--esl-text-color); user-select: none;
       }
 
       /* --- icon buttons --- */
@@ -854,11 +864,11 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: none; border: none; padding: 8px; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
         border-radius: 50%; transition: background .15s; flex-shrink: 0;
-        opacity: .4;
+        opacity: .65;
       }
-      .icon-btn:hover { background: rgba(128,128,128,.15); opacity: .8; }
+      .icon-btn:hover { background: rgba(128,128,128,.15); opacity: 1; }
       .icon-btn.has-note, .icon-btn.has-cat { opacity: 1; }
-      .cat-btn { opacity: .3; }
+      .cat-btn { opacity: .55; }
       .cat-btn.has-cat { opacity: 1; }
       .del-btn { opacity: .5; }
       .del-btn:hover { background: rgba(229,57,53,.15); opacity: 1; }
@@ -1005,6 +1015,8 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     ];
     const activeColor = this._config.color_active || "#2196f3";
     const doneColor = this._config.color_completed || "#4caf50";
+    const textColor = this._config.text_color || "";
+    const iconColor = this._config.icon_color || "";
     const showCat = this._config.show_categories !== false;
     const showBadge = this._config.show_category_badge !== false;
 
@@ -1113,6 +1125,21 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         </div>
         <hr class="sep"/>
         <div class="row">
+          <label>Kolor tekstu</label>
+          <div class="color-hex-row">
+            <div class="color-current" id="esl-cur-text" style="background:${textColor || 'var(--primary-text-color)'}"></div>
+            <input class="color-hex-input" id="esl-hex-text" type="text" value="${textColor || 'auto'}" placeholder="auto lub #rrggbb" />
+          </div>
+        </div>
+        <div class="row">
+          <label>Kolor ikon (tag, notatka)</label>
+          <div class="color-hex-row">
+            <div class="color-current" id="esl-cur-icon" style="background:${iconColor || 'var(--secondary-text-color)'}"></div>
+            <input class="color-hex-input" id="esl-hex-icon" type="text" value="${iconColor || 'auto'}" placeholder="auto lub #rrggbb" />
+          </div>
+        </div>
+        <hr class="sep"/>
+        <div class="row">
           <label>Kategorie</label>
           <div class="check-row" id="esl-chk-cat-row">
             <input type="checkbox" id="esl-chk-cat" ${showCat ? "checked" : ""} />
@@ -1136,6 +1163,11 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     // Color picker: done
     this._bindColorPicker("esl-cp-done", "esl-hex-done", "esl-cur-done", "color_completed");
 
+    // Text color
+    this._bindSimpleColor("esl-hex-text", "esl-cur-text", "text_color", "var(--primary-text-color)");
+    // Icon color
+    this._bindSimpleColor("esl-hex-icon", "esl-cur-icon", "icon_color", "var(--secondary-text-color)");
+
     // Category checkboxes
     this.querySelector("#esl-chk-cat").addEventListener("change", e => {
       this._config = { ...this._config, show_categories: e.target.checked }; this._fire();
@@ -1152,6 +1184,27 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
       if (e.target.type === "checkbox") return;
       const cb = this.querySelector("#esl-chk-badge"); cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
     });
+  }
+
+  _bindSimpleColor(hexId, previewId, configKey, defaultCss) {
+    const hexInput = this.querySelector(`#${hexId}`);
+    const preview = this.querySelector(`#${previewId}`);
+    hexInput.addEventListener("change", () => {
+      let v = hexInput.value.trim().toLowerCase();
+      if (v === "auto" || v === "") {
+        this._config = { ...this._config, [configKey]: "" }; this._fire();
+        preview.style.background = defaultCss;
+        hexInput.value = "auto";
+        return;
+      }
+      if (!v.startsWith("#")) v = "#" + v;
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        this._config = { ...this._config, [configKey]: v }; this._fire();
+        preview.style.background = v;
+        hexInput.value = v;
+      }
+    });
+    hexInput.addEventListener("keydown", e => { if (e.key === "Enter") hexInput.blur(); });
   }
 
   _bindColorPicker(sectionId, hexId, previewId, configKey) {
@@ -1200,7 +1253,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.5.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.5.3 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
