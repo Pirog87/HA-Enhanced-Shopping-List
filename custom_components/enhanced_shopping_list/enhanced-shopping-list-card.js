@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.5.4
+ * Enhanced Shopping List Card v2.5.5
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -786,11 +786,11 @@ class EnhancedShoppingListCard extends HTMLElement {
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
       .swipe-row {
         position: relative; border-radius: var(--R);
-        overflow: clip;
       }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
         display: flex; align-items: center;
+        border-radius: var(--R);
         opacity: 0; transition: opacity .15s;
       }
       .swipe-row.swiping .sw-bg { opacity: 1; }
@@ -1270,7 +1270,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.5.4 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.5.5 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
