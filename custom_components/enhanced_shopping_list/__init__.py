@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+import time
 from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url
@@ -30,11 +30,12 @@ CARD_FILENAME = "enhanced-shopping-list-card.js"
 URL_BASE = f"/{DOMAIN}"
 CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
 
-# Read version from manifest.json + file mtime for cache busting
+# Read version from manifest.json
 _MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text())
 VERSION = _MANIFEST.get("version", "0.0.0")
-_JS_PATH = Path(__file__).parent / CARD_FILENAME
-_JS_MTIME = str(int(os.path.getmtime(_JS_PATH))) if _JS_PATH.exists() else "0"
+
+# Unique cache buster per HA start — guarantees fresh JS on every restart
+_STARTUP_TS = str(int(time.time()))
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -48,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await _async_register_frontend(hass)
 
-    _LOGGER.info("Enhanced Shopping List v%s loaded successfully", VERSION)
+    _LOGGER.info("Enhanced Shopping List v%s loaded (ts=%s)", VERSION, _STARTUP_TS)
     return True
 
 
@@ -64,7 +65,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve JS from integration directory and register as Lovelace resource."""
-    url_with_version = f"{CARD_URL}?v={VERSION}.{_JS_MTIME}"
+    url_with_cache_buster = f"{CARD_URL}?v={VERSION}.{_STARTUP_TS}"
 
     # Step 1: Register static HTTP path so HA serves the JS file
     # cache_headers=False so browser always checks for updated file
@@ -79,11 +80,14 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     except RuntimeError:
         _LOGGER.debug("Static path already registered: %s", URL_BASE)
 
-    # Step 2: Inject as extra JS module (loads on every page, all Lovelace modes)
-    add_extra_js_url(hass, url_with_version)
+    # Step 2: Inject as extra JS (loads on every page, all Lovelace modes)
+    add_extra_js_url(hass, url_with_cache_buster)
 
-    # Step 3: Also register as Lovelace resource (needed for Chromecast displays)
-    await _async_register_lovelace_resource(hass, url_with_version)
+    # Step 3: Also register as Lovelace resource (persistent across restarts,
+    # needed for Chromecast displays and as fallback)
+    await _async_register_lovelace_resource(hass, url_with_cache_buster)
+
+    _LOGGER.debug("Frontend registered: %s", url_with_cache_buster)
 
 
 async def _async_register_lovelace_resource(
