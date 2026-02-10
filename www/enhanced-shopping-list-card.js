@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.7.3
+ * Enhanced Shopping List Card v2.8.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -102,6 +102,8 @@ const STRINGS = {
     ed_group_sort: "Grupuj i sortuj po kategoriach",
     ed_show_badge: "Pokazuj nazwę kategorii na pozycji",
     ed_show_headers: "Pokazuj nagłówki grupowania kategorii",
+    ed_cat_order: "Kolejność kategorii",
+    ed_cat_order_empty: "Dodaj kategorie do produktów, aby ustalić kolejność",
     ed_view: "Widok",
     ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
     ed_item_size: "Rozmiar pozycji",
@@ -152,6 +154,8 @@ const STRINGS = {
     ed_group_sort: "Group and sort by categories",
     ed_show_badge: "Show category name on items",
     ed_show_headers: "Show category group headers",
+    ed_cat_order: "Category order",
+    ed_cat_order_empty: "Add categories to products to set the order",
     ed_view: "View",
     ed_show_notes: "Show note icon on items",
     ed_item_size: "Item size",
@@ -344,12 +348,20 @@ class EnhancedShoppingListCard extends HTMLElement {
     const catEnabled = this._getViewPref("show_categories");
     const hasAnyCat = catEnabled && sorted.some(i => i.category);
     if (hasAnyCat) {
+      const order = this._config.category_order || [];
+      const orderMap = {};
+      for (let i = 0; i < order.length; i++) orderMap[order[i].toLowerCase()] = i;
       sorted.sort((a, b) => {
         const catA = (a.category || "").toLowerCase();
         const catB = (b.category || "").toLowerCase();
         if (catA && !catB) return -1;
         if (!catA && catB) return 1;
-        if (catA !== catB) return catA.localeCompare(catB, "pl");
+        if (catA !== catB) {
+          const oA = catA in orderMap ? orderMap[catA] : 9999;
+          const oB = catB in orderMap ? orderMap[catB] : 9999;
+          if (oA !== oB) return oA - oB;
+          return catA.localeCompare(catB, "pl");
+        }
         return a.name.localeCompare(b.name, "pl");
       });
     } else if (this._config.sort_by === "alphabetical") {
@@ -1459,6 +1471,27 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           cursor: pointer; flex-shrink: 0;
         }
         .check-label { font-size: 14px; color: var(--primary-text-color); }
+        /* --- category order --- */
+        .cat-order-section { margin-top: 10px; }
+        .cat-order-section label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 500; color: var(--secondary-text-color); }
+        .cat-order-list { display: flex; flex-direction: column; gap: 4px; }
+        .cat-order-empty { font-size: 13px; color: var(--secondary-text-color); opacity: .6; padding: 6px 0; }
+        .cat-order-item {
+          display: flex; align-items: center; gap: 6px;
+          padding: 6px 10px; border-radius: 8px;
+          background: var(--secondary-background-color, #f5f5f5);
+          font-size: 14px; color: var(--primary-text-color);
+        }
+        .cat-order-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .cat-order-num { font-size: 11px; color: var(--secondary-text-color); opacity: .6; min-width: 16px; text-align: center; }
+        .cat-order-btn {
+          background: none; border: none; padding: 2px 4px; cursor: pointer;
+          color: var(--secondary-text-color); border-radius: 4px;
+          display: flex; align-items: center; transition: all .12s;
+        }
+        .cat-order-btn:hover { background: rgba(128,128,128,.15); color: var(--primary-text-color); }
+        .cat-order-btn:disabled { opacity: .2; cursor: default; }
+        .cat-order-btn:disabled:hover { background: none; }
         /* --- size picker --- */
         .size-picker { display: flex; gap: 8px; margin-top: 4px; }
         .size-btn {
@@ -1548,6 +1581,10 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <input type="checkbox" id="esl-chk-headers" ${showHeaders ? "checked" : ""} />
             <span class="check-label">${this._t("ed_show_headers")}</span>
           </div>
+          <div class="cat-order-section">
+            <label>${this._t("ed_cat_order")}</label>
+            <div class="cat-order-list" id="esl-cat-order"></div>
+          </div>
         </div>
         <hr class="sep"/>
         <div class="row">
@@ -1620,6 +1657,68 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         this._config = { ...this._config, item_size: btn.dataset.size }; this._fire();
         this.querySelectorAll("#esl-size-picker .size-btn").forEach(b => b.classList.remove("size-active"));
         btn.classList.add("size-active");
+      });
+    });
+
+    // Category order
+    this._renderCatOrder();
+  }
+
+  async _renderCatOrder() {
+    const container = this.querySelector("#esl-cat-order");
+    if (!container || !this._hass || !this._config.entity) {
+      if (container) container.innerHTML = `<div class="cat-order-empty">${this._t("ed_cat_order_empty")}</div>`;
+      return;
+    }
+    try {
+      const res = await this._hass.callWS({ type: "todo/item/list", entity_id: this._config.entity });
+      const cats = new Set();
+      for (const it of (res.items || [])) {
+        const parsed = parseSummary(it.summary);
+        if (parsed.category) cats.add(parsed.category);
+      }
+      if (!cats.size) {
+        container.innerHTML = `<div class="cat-order-empty">${this._t("ed_cat_order_empty")}</div>`;
+        return;
+      }
+      // Merge: config order first, then any new cats appended
+      const saved = this._config.category_order || [];
+      const ordered = [];
+      for (const c of saved) { if (cats.has(c)) ordered.push(c); }
+      for (const c of cats) { if (!ordered.includes(c)) ordered.push(c); }
+
+      this._config = { ...this._config, category_order: ordered };
+      this._buildCatOrderUI(container, ordered);
+    } catch (e) {
+      container.innerHTML = `<div class="cat-order-empty">${this._t("ed_cat_order_empty")}</div>`;
+    }
+  }
+
+  _buildCatOrderUI(container, ordered) {
+    container.innerHTML = ordered.map((cat, i) => `
+      <div class="cat-order-item" data-idx="${i}">
+        <span class="cat-order-num">${i + 1}</span>
+        <span class="cat-order-name">${esc(cat)}</span>
+        <button class="cat-order-btn" data-dir="up" ${i === 0 ? "disabled" : ""}>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5l-7 7h14z" fill="currentColor"/></svg>
+        </button>
+        <button class="cat-order-btn" data-dir="down" ${i === ordered.length - 1 ? "disabled" : ""}>
+          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 19l-7-7h14z" fill="currentColor"/></svg>
+        </button>
+      </div>
+    `).join("");
+
+    container.querySelectorAll(".cat-order-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idx = parseInt(btn.closest(".cat-order-item").dataset.idx, 10);
+        const dir = btn.dataset.dir;
+        const newOrder = [...ordered];
+        const swapIdx = dir === "up" ? idx - 1 : idx + 1;
+        if (swapIdx < 0 || swapIdx >= newOrder.length) return;
+        [newOrder[idx], newOrder[swapIdx]] = [newOrder[swapIdx], newOrder[idx]];
+        this._config = { ...this._config, category_order: newOrder };
+        this._fire();
+        this._buildCatOrderUI(container, newOrder);
       });
     });
   }
@@ -1695,7 +1794,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.7.3 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.8.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
