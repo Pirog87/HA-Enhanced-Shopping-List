@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.6.2
+ * Enhanced Shopping List Card v2.7.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -59,6 +59,108 @@ function esc(s) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  i18n                                                               */
+/* ------------------------------------------------------------------ */
+const STRINGS = {
+  pl: {
+    add_placeholder: "Dodaj produkt...",
+    add_title: "Dodaj",
+    to_buy: "Do kupienia",
+    bought: "Kupione",
+    clear_bought: "Wyczyść kupione",
+    confirm_clear: "Usunąć wszystkie kupione?",
+    yes: "Tak",
+    no: "Nie",
+    empty: "Lista jest pusta",
+    other: "Inne",
+    add_note: "Dodaj notatkę",
+    add_note_placeholder: "Dodaj notatkę...",
+    save: "Zapisz",
+    new_category: "Nowa kategoria...",
+    remove: "Usuń",
+    remove_from_list: "Usuń z listy",
+    pcs: "szt.",
+    confirm_delete: "Usunąć",
+    category: "Kategoria",
+    toggle_group: "Grupuj po kategoriach",
+    toggle_badge: "Etykiety kategorii na pozycjach",
+    toggle_headers: "Nagłówki kategorii",
+    toggle_notes: "Ikona notatki na pozycjach",
+    default_title: "Lista zakupów",
+    ed_entity: "Lista todo (entity)",
+    ed_choose_entity: "-- Wybierz encję todo --",
+    ed_title: "Tytuł karty",
+    ed_sort: "Sortowanie",
+    ed_sort_manual: "Kolejność dodania",
+    ed_sort_alpha: "Alfabetycznie",
+    ed_color_active: "Kolor tła: Do kupienia",
+    ed_color_done: "Kolor tła: Kupione",
+    ed_color_none: "Brak (motyw)",
+    ed_text_color: "Kolor tekstu",
+    ed_icon_color: "Kolor ikon (tag, notatka)",
+    ed_categories: "Kategorie",
+    ed_group_sort: "Grupuj i sortuj po kategoriach",
+    ed_show_badge: "Pokazuj nazwę kategorii na pozycji",
+    ed_show_headers: "Pokazuj nagłówki grupowania kategorii",
+    ed_view: "Widok",
+    ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
+    ed_hex_placeholder: "#rrggbb lub none",
+    ed_auto: "auto",
+    ed_auto_placeholder: "auto lub #rrggbb",
+  },
+  en: {
+    add_placeholder: "Add product...",
+    add_title: "Add",
+    to_buy: "To buy",
+    bought: "Bought",
+    clear_bought: "Clear bought",
+    confirm_clear: "Remove all bought items?",
+    yes: "Yes",
+    no: "No",
+    empty: "List is empty",
+    other: "Other",
+    add_note: "Add note",
+    add_note_placeholder: "Add note...",
+    save: "Save",
+    new_category: "New category...",
+    remove: "Remove",
+    remove_from_list: "Remove from list",
+    pcs: "pcs",
+    confirm_delete: "Delete",
+    category: "Category",
+    toggle_group: "Group by categories",
+    toggle_badge: "Category labels on items",
+    toggle_headers: "Category headers",
+    toggle_notes: "Note icon on items",
+    default_title: "Shopping list",
+    ed_entity: "Todo list (entity)",
+    ed_choose_entity: "-- Choose todo entity --",
+    ed_title: "Card title",
+    ed_sort: "Sorting",
+    ed_sort_manual: "Order added",
+    ed_sort_alpha: "Alphabetical",
+    ed_color_active: "Background: To buy",
+    ed_color_done: "Background: Bought",
+    ed_color_none: "None (theme)",
+    ed_text_color: "Text color",
+    ed_icon_color: "Icon color (tag, note)",
+    ed_categories: "Categories",
+    ed_group_sort: "Group and sort by categories",
+    ed_show_badge: "Show category name on items",
+    ed_show_headers: "Show category group headers",
+    ed_view: "View",
+    ed_show_notes: "Show note icon on items",
+    ed_hex_placeholder: "#rrggbb or none",
+    ed_auto: "auto",
+    ed_auto_placeholder: "auto or #rrggbb",
+  },
+};
+
+function getStrings(lang) {
+  return (lang || "en").startsWith("pl") ? STRINGS.pl : STRINGS.en;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Card                                                               */
 /* ------------------------------------------------------------------ */
 class EnhancedShoppingListCard extends HTMLElement {
@@ -86,7 +188,7 @@ class EnhancedShoppingListCard extends HTMLElement {
   static getConfigElement() { return document.createElement("enhanced-shopping-list-card-editor"); }
   static getStubConfig(hass) {
     const ent = hass ? Object.keys(hass.states).find(e => e.startsWith("todo.")) : "";
-    return { entity: ent || "", title: "Lista zakupów" };
+    return { entity: ent || "", title: getStrings(hass?.language).default_title };
   }
 
   set hass(hass) {
@@ -105,6 +207,7 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   get hass() { return this._hass; }
+  _t(key) { return getStrings(this._hass?.language)[key] || key; }
 
   /* ---------- data ---------- */
 
@@ -255,7 +358,7 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _render() {
-    const title = this._config.title || "Lista zakupów";
+    const title = this._config.title || this._t("default_title");
     const activeColor = this._config.color_active || "#2196f3";
     const doneColor = this._config.color_completed || "#4caf50";
     const isActiveNone = activeColor === "none";
@@ -282,16 +385,16 @@ class EnhancedShoppingListCard extends HTMLElement {
         <div class="header">
           <span class="header-title">${esc(title)}</span>
           <div class="header-toggles">
-            <button class="hdr-toggle${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" title="Grupuj po kategoriach">
+            <button class="hdr-toggle${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" title="${this._t("toggle_group")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_category_badge") ? " hdr-on" : ""}" data-toggle="show_category_badge" title="Etykiety kategorii na pozycjach">
+            <button class="hdr-toggle${this._getViewPref("show_category_badge") ? " hdr-on" : ""}" data-toggle="show_category_badge" title="${this._t("toggle_badge")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_category_headers") ? " hdr-on" : ""}" data-toggle="show_category_headers" title="Naglowki kategorii">
+            <button class="hdr-toggle${this._getViewPref("show_category_headers") ? " hdr-on" : ""}" data-toggle="show_category_headers" title="${this._t("toggle_headers")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 10h10M4 14h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="Ikona notatki na pozycjach">
+            <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="${this._t("toggle_notes")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
           </div>
@@ -299,8 +402,8 @@ class EnhancedShoppingListCard extends HTMLElement {
         <div class="content">
           <div class="add-section">
             <div class="input-row">
-              <input class="add-input" type="text" placeholder="Dodaj produkt..." />
-              <button class="add-btn" title="Dodaj">
+              <input class="add-input" type="text" placeholder="${this._t("add_placeholder")}" />
+              <button class="add-btn" title="${this._t("add_title")}">
                 <svg viewBox="0 0 24 24" width="28" height="28">
                   <circle cx="12" cy="12" r="11" fill="var(--primary-color)"/>
                   <path d="M12 7v10M7 12h10" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
@@ -310,20 +413,20 @@ class EnhancedShoppingListCard extends HTMLElement {
             <div class="suggestions" style="display:none"></div>
           </div>
           <div class="section active-section">
-            <div class="section-title">Do kupienia <span class="badge-count active-count">0</span></div>
+            <div class="section-title">${this._t("to_buy")} <span class="badge-count active-count">0</span></div>
             <div class="active-list"></div>
           </div>
           <div class="section completed-section" style="display:none">
             <div class="section-title completed-header">
-              <span>Kupione <span class="badge-count completed-count">0</span> <span class="chevron">&#9660;</span></span>
-              <button class="clear-all-btn" title="Wyczysc kupione">
+              <span>${this._t("bought")} <span class="badge-count completed-count">0</span> <span class="chevron">&#9660;</span></span>
+              <button class="clear-all-btn" title="${this._t("clear_bought")}">
                 <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
               </button>
             </div>
             <div class="confirm-bar" style="display:none">
-              <span>Usunac wszystkie kupione?</span>
-              <button class="btn-yes">Tak</button>
-              <button class="btn-no">Nie</button>
+              <span>${this._t("confirm_clear")}</span>
+              <button class="btn-yes">${this._t("yes")}</button>
+              <button class="btn-no">${this._t("no")}</button>
             </div>
             <div class="completed-list" style="height:0;overflow:hidden"></div>
           </div>
@@ -378,7 +481,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     R.querySelector(".completed-count").textContent = completed.length;
     const aList = R.querySelector(".active-list");
     if (!active.length) {
-      aList.innerHTML = '<div class="empty-msg">Lista jest pusta</div>';
+      aList.innerHTML = `<div class="empty-msg">${this._t("empty")}</div>`;
     } else {
       const catEnabled = this._getViewPref("show_categories");
       const showHeaders = this._getViewPref("show_category_headers");
@@ -392,7 +495,7 @@ class EnhancedShoppingListCard extends HTMLElement {
             if (cat) {
               html += `<div class="cat-header"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 3H4a1 1 0 00-1 1v6a1 1 0 001 1h1l5 5V3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20.5 11.5L17 8l-3 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(cat)}</div>`;
             } else {
-              html += `<div class="cat-header cat-header-none">Inne</div>`;
+              html += `<div class="cat-header cat-header-none">${this._t("other")}</div>`;
             }
             lastCat = cat;
           }
@@ -481,10 +584,10 @@ class EnhancedShoppingListCard extends HTMLElement {
             </div>
             ${notePreview}
           </div>
-          <button class="icon-btn cat-btn${hc}" data-action="edit-category" title="${item.category || "Kategoria"}">
+          <button class="icon-btn cat-btn${hc}" data-action="edit-category" title="${item.category || this._t("category")}">
             <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="${item.category ? "var(--primary-color)" : "none"}" stroke="${item.category ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.5" fill="${item.category ? "#fff" : "var(--esl-icon-color)"}"/></svg>
           </button>
-          ${showNotes ? `<button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : "Dodaj notatke"}">
+          ${showNotes ? `<button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : this._t("add_note")}">
             <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/></svg>
           </button>` : ""}
           <div class="qty-area">
@@ -499,17 +602,17 @@ class EnhancedShoppingListCard extends HTMLElement {
         </div>
       </div>
       <div class="note-editor" style="display:none">
-        <textarea class="note-textarea" placeholder="Dodaj notatke...">${esc(item.notes || "")}</textarea>
+        <textarea class="note-textarea" placeholder="${this._t("add_note_placeholder")}">${esc(item.notes || "")}</textarea>
         <div class="note-bar">
-          <button class="note-save">Zapisz</button>
+          <button class="note-save">${this._t("save")}</button>
         </div>
       </div>
       <div class="cat-editor" style="display:none">
         <div class="cat-chips"></div>
         <div class="cat-input-row">
-          <input class="cat-input" type="text" placeholder="Nowa kategoria..." value="${esc(item.category || "")}" />
-          <button class="cat-save">Zapisz</button>
-          ${item.category ? '<button class="cat-remove">Usun</button>' : ""}
+          <input class="cat-input" type="text" placeholder="${this._t("new_category")}" value="${esc(item.category || "")}" />
+          <button class="cat-save">${this._t("save")}</button>
+          ${item.category ? `<button class="cat-remove">${this._t("remove")}</button>` : ""}
         </div>
       </div>
     </div>`;
@@ -533,8 +636,8 @@ class EnhancedShoppingListCard extends HTMLElement {
             </div>
             ${item.notes ? `<div class="note-preview done-note">${esc(item.notes)}</div>` : ""}
           </div>
-          ${item.quantity > 1 ? `<span class="done-qty">${item.quantity} szt.</span>` : ""}
-          <button class="icon-btn del-btn" data-action="delete" title="Usun z listy">
+          ${item.quantity > 1 ? `<span class="done-qty">${item.quantity} ${this._t("pcs")}</span>` : ""}
+          <button class="icon-btn del-btn" data-action="delete" title="${this._t("remove_from_list")}">
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="var(--error-color,#e53935)" stroke-width="1.5" stroke-linejoin="round"/></svg>
           </button>
         </div>
@@ -789,9 +892,9 @@ class EnhancedShoppingListCard extends HTMLElement {
     overlay.className = "delete-confirm";
     overlay.innerHTML = `
       <svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/></svg>
-      <span class="dc-text">Usunac <b>${esc(item.name)}</b>?</span>
-      <button class="dc-yes">Tak</button>
-      <button class="dc-no">Nie</button>
+      <span class="dc-text">${this._t("confirm_delete")} <b>${esc(item.name)}</b>?</span>
+      <button class="dc-yes">${this._t("yes")}</button>
+      <button class="dc-no">${this._t("no")}</button>
     `;
     wrapEl.appendChild(overlay);
     overlay.querySelector(".dc-yes").addEventListener("click", (e) => {
@@ -820,7 +923,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     box.style.display = "";
     box.innerHTML = this._suggestions.map(x => {
       const on = x.i.status === "needs_action";
-      const badge = on ? `<span class="sg-badge">${x.i.quantity} szt.</span>` : `<span class="sg-badge sg-done">kupione</span>`;
+      const badge = on ? `<span class="sg-badge">${x.i.quantity} ${this._t("pcs")}</span>` : `<span class="sg-badge sg-done">${this._t("bought").toLowerCase()}</span>`;
       const catInfo = x.i.category ? `<span class="sg-cat">${esc(x.i.category)}</span>` : "";
       return `<div class="sg-item" data-uid="${x.i.uid}"><span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
     }).join("");
@@ -1172,6 +1275,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 /* ------------------------------------------------------------------ */
 class EnhancedShoppingListCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._hass = null; }
+  _t(key) { return getStrings(this._hass?.language)[key] || key; }
 
   set hass(hass) {
     this._hass = hass;
@@ -1188,7 +1292,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     if (!sel || !this._hass) return;
     const ents = Object.keys(this._hass.states).filter(e => e.startsWith("todo.")).sort();
     const cur = this._config.entity || "";
-    sel.innerHTML = '<option value="">-- Wybierz encje todo --</option>' +
+    sel.innerHTML = `<option value="">${this._t("ed_choose_entity")}</option>` +
       ents.map(e => {
         const fn = this._hass.states[e].attributes.friendly_name || e;
         return `<option value="${e}"${e === cur ? " selected" : ""}>${fn} (${e})</option>`;
@@ -1273,84 +1377,84 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
       </style>
       <div class="esl-ed">
         <div class="row">
-          <label>Lista todo (entity)</label>
-          <select id="esl-entity"><option value="">-- Wybierz encje todo --</option></select>
+          <label>${this._t("ed_entity")}</label>
+          <select id="esl-entity"><option value="">${this._t("ed_choose_entity")}</option></select>
         </div>
         <div class="row">
-          <label>Tytul karty</label>
-          <input type="text" id="esl-title" value="${(this._config.title || "").replace(/"/g, "&quot;")}" placeholder="Lista zakupow" />
+          <label>${this._t("ed_title")}</label>
+          <input type="text" id="esl-title" value="${(this._config.title || "").replace(/"/g, "&quot;")}" placeholder="${this._t("default_title")}" />
         </div>
         <div class="row">
-          <label>Sortowanie</label>
+          <label>${this._t("ed_sort")}</label>
           <select id="esl-sort">
-            <option value="manual"${!this._config.sort_by || this._config.sort_by === "manual" ? " selected" : ""}>Kolejnosc dodania</option>
-            <option value="alphabetical"${this._config.sort_by === "alphabetical" ? " selected" : ""}>Alfabetycznie</option>
+            <option value="manual"${!this._config.sort_by || this._config.sort_by === "manual" ? " selected" : ""}>${this._t("ed_sort_manual")}</option>
+            <option value="alphabetical"${this._config.sort_by === "alphabetical" ? " selected" : ""}>${this._t("ed_sort_alpha")}</option>
           </select>
         </div>
         <hr class="sep"/>
         <div class="row">
-          <label>Kolor tla: Do kupienia</label>
+          <label>${this._t("ed_color_active")}</label>
           <div class="color-section" id="esl-cp-active">
             <div class="color-swatches">
-              <div class="color-swatch color-swatch-none${activeColor === 'none' ? ' active' : ''}" data-color="none" title="Brak (motyw)"></div>
+              <div class="color-swatch color-swatch-none${activeColor === 'none' ? ' active' : ''}" data-color="none" title="${this._t("ed_color_none")}"></div>
               ${PALETTE.map(c => `<div class="color-swatch${c === activeColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
             </div>
             <div class="color-hex-row">
               <div class="color-current" id="esl-cur-active" style="background:${activeColor === 'none' ? 'var(--card-background-color,#fff)' : activeColor}"></div>
-              <input class="color-hex-input" id="esl-hex-active" type="text" value="${activeColor}" maxlength="7" placeholder="#rrggbb lub none" />
+              <input class="color-hex-input" id="esl-hex-active" type="text" value="${activeColor}" maxlength="7" placeholder="${this._t("ed_hex_placeholder")}" />
             </div>
           </div>
         </div>
         <div class="row">
-          <label>Kolor tla: Kupione</label>
+          <label>${this._t("ed_color_done")}</label>
           <div class="color-section" id="esl-cp-done">
             <div class="color-swatches">
-              <div class="color-swatch color-swatch-none${doneColor === 'none' ? ' active' : ''}" data-color="none" title="Brak (motyw)"></div>
+              <div class="color-swatch color-swatch-none${doneColor === 'none' ? ' active' : ''}" data-color="none" title="${this._t("ed_color_none")}"></div>
               ${PALETTE.map(c => `<div class="color-swatch${c === doneColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
             </div>
             <div class="color-hex-row">
               <div class="color-current" id="esl-cur-done" style="background:${doneColor === 'none' ? 'var(--card-background-color,#fff)' : doneColor}"></div>
-              <input class="color-hex-input" id="esl-hex-done" type="text" value="${doneColor}" maxlength="7" placeholder="#rrggbb lub none" />
+              <input class="color-hex-input" id="esl-hex-done" type="text" value="${doneColor}" maxlength="7" placeholder="${this._t("ed_hex_placeholder")}" />
             </div>
           </div>
         </div>
         <hr class="sep"/>
         <div class="row">
-          <label>Kolor tekstu</label>
+          <label>${this._t("ed_text_color")}</label>
           <div class="color-hex-row">
             <div class="color-current" id="esl-cur-text" style="background:${textColor || 'var(--primary-text-color)'}"></div>
-            <input class="color-hex-input" id="esl-hex-text" type="text" value="${textColor || 'auto'}" placeholder="auto lub #rrggbb" />
+            <input class="color-hex-input" id="esl-hex-text" type="text" value="${textColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
           </div>
         </div>
         <div class="row">
-          <label>Kolor ikon (tag, notatka)</label>
+          <label>${this._t("ed_icon_color")}</label>
           <div class="color-hex-row">
             <div class="color-current" id="esl-cur-icon" style="background:${iconColor || 'var(--secondary-text-color)'}"></div>
-            <input class="color-hex-input" id="esl-hex-icon" type="text" value="${iconColor || 'auto'}" placeholder="auto lub #rrggbb" />
+            <input class="color-hex-input" id="esl-hex-icon" type="text" value="${iconColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
           </div>
         </div>
         <hr class="sep"/>
         <div class="row">
-          <label>Kategorie</label>
+          <label>${this._t("ed_categories")}</label>
           <div class="check-row" id="esl-chk-cat-row">
             <input type="checkbox" id="esl-chk-cat" ${showCat ? "checked" : ""} />
-            <span class="check-label">Grupuj i sortuj po kategoriach</span>
+            <span class="check-label">${this._t("ed_group_sort")}</span>
           </div>
           <div class="check-row" id="esl-chk-badge-row">
             <input type="checkbox" id="esl-chk-badge" ${showBadge ? "checked" : ""} />
-            <span class="check-label">Pokazuj nazwe kategorii na pozycji</span>
+            <span class="check-label">${this._t("ed_show_badge")}</span>
           </div>
           <div class="check-row" id="esl-chk-headers-row">
             <input type="checkbox" id="esl-chk-headers" ${showHeaders ? "checked" : ""} />
-            <span class="check-label">Pokazuj naglowki grupowania kategorii</span>
+            <span class="check-label">${this._t("ed_show_headers")}</span>
           </div>
         </div>
         <hr class="sep"/>
         <div class="row">
-          <label>Widok</label>
+          <label>${this._t("ed_view")}</label>
           <div class="check-row" id="esl-chk-notes-row">
             <input type="checkbox" id="esl-chk-notes" ${showNotes ? "checked" : ""} />
-            <span class="check-label">Pokazuj ikone notatki na pozycjach</span>
+            <span class="check-label">${this._t("ed_show_notes")}</span>
           </div>
         </div>
       </div>`;
@@ -1460,12 +1564,12 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "enhanced-shopping-list-card",
   name: "Enhanced Shopping List",
-  description: "Rozbudowana lista zakupow z ilosciami, notatkami, kategoriami i fuzzy search",
+  description: "Enhanced shopping list with quantities, notes, categories, swipe gestures & fuzzy search",
   preview: false,
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.6.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.7.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
