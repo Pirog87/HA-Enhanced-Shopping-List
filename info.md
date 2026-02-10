@@ -1,13 +1,16 @@
 # Enhanced Shopping List
 
-Rozbudowana lista zakupów dla Home Assistant z ilościami, notatkami i fuzzy search.
+A feature-rich shopping list card for Home Assistant.
 
-## Funkcje
+## Features
 
-- Inteligentne dodawanie: duplikaty automatycznie zwiększają ilość
-- Fuzzy search z podpowiedziami
-- Ilości z przyciskami +/-
-- Notatki przy każdej pozycji
-- Swipe gestures na urządzeniach dotykowych
-- Real-time sync między urządzeniami
-- Sekcja "Kupione" z możliwością przywracania
+- Works with any `todo.*` entity (shopping_list, Todoist, Bring!, Google Tasks)
+- Quantities with +/- buttons
+- Notes per product
+- Categories with grouping, sorting, badges & headers
+- Swipe gestures: right = bought, left = delete with confirmation
+- Fuzzy search suggestions
+- Configurable colors (backgrounds, text, icons)
+- 4 header quick-toggles for view preferences
+- i18n: Polish & English (auto-detected)
+- Real-time sync across devices

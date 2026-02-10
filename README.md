@@ -1,104 +1,112 @@
 # Enhanced Shopping List for Home Assistant
 
-Rozbudowana lista zakupów dla Home Assistant z ilościami, notatkami, fuzzy search i real-time sync.
+A feature-rich shopping list card for Home Assistant that works with any `todo.*` entity (native HA shopping list, Todoist, Bring!, Google Tasks, etc.).
 
-## Funkcje
+Rozbudowana lista zakupów dla Home Assistant — działa z każdą encją `todo.*`.
 
-- **Inteligentne dodawanie** - duplikaty automatycznie zwiększają ilość, kupione produkty wracają na listę
-- **Fuzzy search** - podpowiedzi z tolerancją na literówki (np. "mlecz" znajdzie "mleczko")
-- **Ilości** - przyciski +/- przy każdej pozycji
-- **Notatki** - opcjonalne uwagi przy każdym produkcie
-- **Swipe gestures** - przesuń w prawo = kupione, w lewo = usuń (mobile)
-- **Real-time sync** - zmiany widoczne natychmiast na wszystkich urządzeniach
-- **Sekcja "Kupione"** - zwijana, z opcją przywracania i masowego czyszczenia
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![GitHub release](https://img.shields.io/github/v/release/Pirog87/HA-Enhanced-Shopping-List)](https://github.com/Pirog87/HA-Enhanced-Shopping-List/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Instalacja
+## Features
 
-### HACS (zalecane)
+- **Smart adding** — duplicates auto-increment quantity; bought items return to the active list
+- **Fuzzy search** — suggestions with typo tolerance (e.g. "mlecz" finds "mleczko")
+- **Quantities** — +/- buttons on every item, inline editing
+- **Notes** — optional notes per product, visible on card or in expandable editor
+- **Categories** — group & sort by aisle/category, quick-chip picker, badges on items
+- **Swipe gestures** — swipe right = bought (green), swipe left = delete with confirmation (red)
+- **4 header quick-toggles** — group by categories, category badges, category headers, note icons
+- **Delete confirmation** — red overlay with Yes/No buttons before removing any item
+- **Real-time sync** — changes appear instantly on all devices via HA WebSocket
+- **Collapsible "Bought" section** — with restore & bulk clear
+- **Configurable colors** — active/bought backgrounds, text color, icon color, palette + hex input
+- **i18n** — Polish and English UI (auto-detected from HA language setting)
+- **Works with any todo entity** — native `shopping_list`, Todoist, Bring!, Google Tasks, etc.
 
-1. Otwórz HACS w Home Assistant
-2. Kliknij menu (3 kropki) > **Custom repositories**
-3. Wklej URL tego repozytorium, kategoria: **Integration**
-4. Kliknij **Install**
-5. Zrestartuj Home Assistant
+## Screenshots
 
-### Ręczna instalacja
+<!-- Add screenshots here -->
+<!-- ![Card](screenshots/card.png) -->
+<!-- ![Editor](screenshots/editor.png) -->
 
-1. Skopiuj folder `custom_components/enhanced_shopping_list/` do katalogu `config/custom_components/`
-2. Skopiuj plik `www/enhanced-shopping-list-card.js` do katalogu `config/www/`
-3. Zrestartuj Home Assistant
+## Installation
 
-## Konfiguracja (automatyczna)
+### HACS (recommended)
 
-Po instalacji i restarcie HA:
+1. Open HACS in Home Assistant
+2. Click the menu (3 dots) > **Custom repositories**
+3. Paste this repository URL: `https://github.com/Pirog87/HA-Enhanced-Shopping-List`
+4. Category: **Integration**
+5. Click **Install**
+6. Restart Home Assistant
 
-1. **Ustawienia > Urządzenia i usługi > Dodaj integrację** > szukaj **Enhanced Shopping List** > kliknij **ZATWIERDŹ**
-2. Karta JS rejestruje się automatycznie — nie trzeba dodawać zasobów ręcznie
-3. **Edytuj dashboard > Dodaj kartę** > w sekcji "Niestandardowe" znajdziesz **Enhanced Shopping List** > kliknij i gotowe
+### Manual installation
 
-Zero edycji YAML. Zero grzebania w plikach.
+1. Copy the `custom_components/enhanced_shopping_list/` folder to your `config/custom_components/` directory
+2. Restart Home Assistant
 
-## Serwisy
+## Configuration
 
-Dostępne serwisy do użycia w automatyzacjach i skryptach:
+After installation and HA restart:
 
-| Serwis | Opis | Parametry |
-|--------|------|-----------|
-| `enhanced_shopping_list.add_item` | Dodaj produkt | `name` (wymagane), `quantity` (domyślnie 1), `notes` |
-| `enhanced_shopping_list.complete_item` | Oznacz jako kupione | `item_id` |
-| `enhanced_shopping_list.uncomplete_item` | Przywróć do listy | `item_id` |
-| `enhanced_shopping_list.remove_item` | Usuń pozycję | `item_id` |
-| `enhanced_shopping_list.update_item` | Edytuj pozycję | `item_id`, `name`, `quantity`, `notes` |
-| `enhanced_shopping_list.clear_completed` | Wyczyść kupione | brak |
+1. **Settings > Devices & Services > Add Integration** > search **Enhanced Shopping List** > click **Submit**
+2. The card JS registers automatically — no need to add Lovelace resources manually
+3. **Edit dashboard > Add Card** > in the "Custom" section find **Enhanced Shopping List** > click and you're done
 
-### Przykład automatyzacji (dodawanie głosem)
+No YAML editing required. No manual file management.
 
-```yaml
-automation:
-  - alias: "Dodaj do listy zakupów głosem"
-    trigger:
-      - platform: event
-        event_type: custom_sentence
-    action:
-      - service: enhanced_shopping_list.add_item
-        data:
-          name: "{{ trigger.event.data.product }}"
-          quantity: "{{ trigger.event.data.quantity | default(1) }}"
-```
+### Card editor options
 
-## Widget na Androida
+| Option | Description |
+|--------|-------------|
+| Todo entity | Select any `todo.*` entity |
+| Card title | Custom title (default: "Shopping list" / "Lista zakupów") |
+| Sorting | Order added / Alphabetical |
+| Background colors | Active & bought item backgrounds (palette + hex + "none" for theme) |
+| Text color | Custom text color or auto (theme) |
+| Icon color | Tag & note icon color or auto (theme) |
+| Categories | Group/sort, show badges, show headers |
+| View | Show note icon on items |
 
-Aplikacja Home Assistant Companion na Androida obsługuje widgety. Aby korzystać z listy zakupów jako widgetu:
+### Header quick-toggles
 
-1. Zainstaluj **Home Assistant Companion** z Google Play
-2. Skonfiguruj aplikację z Twoim serwerem HA
-3. Utwórz skrypt w HA wywołujący serwisy `enhanced_shopping_list`
-4. Dodaj widget **Entity** lub **Template** na ekranie Androida, wskazujący na skrypt lub dashboard z kartą
-5. Alternatywnie: użyj widgetu **WebView**, który otwiera dashboard Lovelace z kartą enhanced-shopping-list-card
+The card header has 4 toggle buttons (right side) for quick switching:
 
-Najprostsze podejście: ustaw dashboard z kartą listy zakupów jako domyślny widok w aplikacji Companion.
+1. **Grid** — Group by categories on/off
+2. **Tag** — Category badge labels on/off
+3. **Lines** — Category group headers on/off
+4. **Document** — Note icon on items on/off
 
-## Struktura plików
+These preferences persist per entity in localStorage.
+
+## How it works
+
+This integration is **frontend-only**. It does not create custom services or a custom backend. The Lovelace card communicates directly with HA's native `todo` API:
+
+- **Read items**: `todo/item/list` WebSocket call
+- **Add/update/remove**: `todo.add_item`, `todo.update_item`, `todo.remove_item` services
+- **Metadata encoding**: quantity, category, and notes are encoded in the todo item summary: `"Name (qty) [Category] // notes"`
+
+This means it works with **any todo provider** that HA supports.
+
+## File structure
 
 ```
 custom_components/enhanced_shopping_list/
-  __init__.py       # Setup, serwisy, WebSocket API, auto-rejestracja karty
-  manifest.json     # Manifest integracji HA
-  config_flow.py    # Config flow (instalacja z UI)
-  const.py          # Stale (DOMAIN, STORAGE_KEY, EVENT_NAME)
-  store.py          # Persystencja danych (JSON via HA Store)
-  services.yaml     # Definicje serwisow
-  strings.json      # Teksty UI
-  translations/     # Tłumaczenia (en, pl)
-www/
-  enhanced-shopping-list-card.js   # Lovelace custom card (LitElement)
+  __init__.py                        # Serves JS, registers Lovelace resource
+  manifest.json                      # Integration manifest
+  config_flow.py                     # Config flow (UI setup)
+  const.py                           # Constants (DOMAIN)
+  strings.json                       # HA integration UI texts
+  translations/                      # HA integration translations (en, pl)
+  enhanced-shopping-list-card.js     # Lovelace custom card
 ```
 
-## Wymagania
+## Requirements
 
 - Home Assistant 2024.1.0+
-- Python 3.12+
 
-## Licencja
+## License
 
-MIT
+[MIT](LICENSE)
