@@ -77,19 +77,21 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config.entity) throw new Error("Please define an entity (todo.*)");
     this._config = config;
-    if (this._rendered) { this._render(); this._fetchItems(); }
+    if (this._rendered) { this._render(); if (config.entity) this._fetchItems(); }
   }
 
   getCardSize() { return 3; }
   static getConfigElement() { return document.createElement("enhanced-shopping-list-card-editor"); }
-  static getStubConfig() { return { entity: "", title: "Lista zakupów" }; }
+  static getStubConfig(hass) {
+    const ent = hass ? Object.keys(hass.states).find(e => e.startsWith("todo.")) : "";
+    return { entity: ent || "", title: "Lista zakupów" };
+  }
 
   set hass(hass) {
     const oldHass = this._hass;
     this._hass = hass;
-    if (!this._rendered) { this._render(); this._rendered = true; this._fetchItems(); return; }
+    if (!this._rendered) { this._render(); this._rendered = true; if (this._config.entity) this._fetchItems(); return; }
     const entity = this._config.entity;
     if (entity && oldHass) {
       const o = oldHass.states[entity], n = hass.states[entity];
@@ -1241,8 +1243,12 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
 }
 
 /* ------------------------------------------------------------------ */
-customElements.define("enhanced-shopping-list-card", EnhancedShoppingListCard);
-customElements.define("enhanced-shopping-list-card-editor", EnhancedShoppingListCardEditor);
+if (!customElements.get("enhanced-shopping-list-card")) {
+  customElements.define("enhanced-shopping-list-card", EnhancedShoppingListCard);
+}
+if (!customElements.get("enhanced-shopping-list-card-editor")) {
+  customElements.define("enhanced-shopping-list-card-editor", EnhancedShoppingListCardEditor);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
