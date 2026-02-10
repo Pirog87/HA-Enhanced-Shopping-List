@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.5.0
+ * Enhanced Shopping List Card v2.5.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -223,10 +223,9 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _sortItems(items) {
     const sorted = [...items];
-    const hasAnyCat = sorted.some(i => i.category);
+    const catEnabled = this._config.show_categories !== false;
+    const hasAnyCat = catEnabled && sorted.some(i => i.category);
     if (hasAnyCat) {
-      // Primary: category (items with category first, sorted alphabetically)
-      // Secondary: alphabetical by name within category
       sorted.sort((a, b) => {
         const catA = (a.category || "").toLowerCase();
         const catB = (b.category || "").toLowerCase();
@@ -340,7 +339,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!active.length) {
       aList.innerHTML = '<div class="empty-msg">Lista jest pusta</div>';
     } else {
-      const hasAnyCat = active.some(i => i.category);
+      const catEnabled = this._config.show_categories !== false;
+      const hasAnyCat = catEnabled && active.some(i => i.category);
       let html = "";
       let lastCat = null;
       for (const item of active) {
@@ -378,7 +378,8 @@ class EnhancedShoppingListCard extends HTMLElement {
   _htmlActiveItem(item) {
     const hn = item.notes ? " has-note" : "";
     const hc = item.category ? " has-cat" : "";
-    const catBadge = item.category
+    const showBadge = this._config.show_category_badge !== false;
+    const catBadge = (item.category && showBadge)
       ? `<span class="cat-badge" data-action="edit-category">${esc(item.category)}</span>` : "";
     const notePreview = item.notes
       ? `<div class="note-preview" data-action="toggle-note">${esc(item.notes)}</div>` : "";
@@ -431,7 +432,8 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _htmlCompletedItem(item) {
-    const catBadge = item.category
+    const showBadge = this._config.show_category_badge !== false;
+    const catBadge = (item.category && showBadge)
       ? `<span class="cat-badge cat-badge-done">${esc(item.category)}</span>` : "";
     return `
     <div class="item-wrap" data-uid="${item.uid}">
@@ -983,6 +985,17 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
   }
 
   _render() {
+    const PALETTE = [
+      "#2196f3","#1976d2","#0d47a1","#03a9f4","#00bcd4","#009688",
+      "#4caf50","#43a047","#2e7d32","#8bc34a","#cddc39","#ffeb3b",
+      "#ffc107","#ff9800","#ff5722","#f44336","#e53935","#b71c1c",
+      "#9c27b0","#7b1fa2","#673ab7","#3f51b5","#607d8b","#795548",
+    ];
+    const activeColor = this._config.color_active || "#2196f3";
+    const doneColor = this._config.color_completed || "#4caf50";
+    const showCat = this._config.show_categories !== false;
+    const showBadge = this._config.show_category_badge !== false;
+
     this.innerHTML = `
       <style>
         .esl-ed { padding: 16px; }
@@ -995,23 +1008,40 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           background: var(--card-background-color,#fff); color: var(--primary-text-color);
           font-family: inherit; font-size: 14px;
         }
-        .color-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
-        .color-row input[type="color"] {
-          -webkit-appearance: none; -moz-appearance: none; appearance: none;
-          width: 48px; height: 48px; min-width: 48px; min-height: 48px;
-          border: 2px solid var(--divider-color,#ddd); border-radius: 10px;
-          padding: 3px; cursor: pointer; background: none;
+        .esl-ed .sep { border: none; border-top: 1px solid var(--divider-color,#ddd); margin: 16px 0 12px; }
+        /* --- swatch color picker --- */
+        .color-section { margin-top: 4px; }
+        .color-swatches {
+          display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin-bottom: 8px;
         }
-        .color-row input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
-        .color-row input[type="color"]::-webkit-color-swatch { border-radius: 6px; border: none; }
-        .color-row input[type="color"]::-moz-color-swatch { border-radius: 6px; border: none; }
-        .color-preview {
-          flex: 1; height: 36px; border-radius: 10px; opacity: .4;
+        .color-swatch {
+          width: 100%; aspect-ratio: 1; border-radius: 8px; border: 2.5px solid transparent;
+          cursor: pointer; transition: transform .12s, border-color .12s;
         }
-        .color-hex {
-          font-size: 13px; font-family: monospace; color: var(--secondary-text-color);
-          min-width: 64px;
+        .color-swatch:hover { transform: scale(1.15); }
+        .color-swatch.active { border-color: var(--primary-text-color); transform: scale(1.15); }
+        .color-hex-row { display: flex; align-items: center; gap: 8px; }
+        .color-hex-input {
+          flex: 1; padding: 6px 10px; font-size: 14px; font-family: monospace;
+          border: 1.5px solid var(--divider-color,#ddd); border-radius: 8px;
+          background: var(--card-background-color,#fff); color: var(--primary-text-color);
+          outline: none; box-sizing: border-box;
         }
+        .color-hex-input:focus { border-color: var(--primary-color); }
+        .color-current {
+          width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+          border: 1.5px solid var(--divider-color,#ddd);
+        }
+        /* --- checkbox row --- */
+        .check-row {
+          display: flex; align-items: center; gap: 10px; padding: 8px 0; cursor: pointer;
+          user-select: none;
+        }
+        .check-row input[type="checkbox"] {
+          width: 20px; height: 20px; accent-color: var(--primary-color);
+          cursor: pointer; flex-shrink: 0;
+        }
+        .check-label { font-size: 14px; color: var(--primary-text-color); }
       </style>
       <div class="esl-ed">
         <div class="row">
@@ -1029,37 +1059,98 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <option value="alphabetical"${this._config.sort_by === "alphabetical" ? " selected" : ""}>Alfabetycznie</option>
           </select>
         </div>
+        <hr class="sep"/>
         <div class="row">
           <label>Kolor tla: Do kupienia</label>
-          <div class="color-row">
-            <input type="color" id="esl-color-active" value="${this._config.color_active || "#2196f3"}" />
-            <div class="color-preview" id="esl-preview-active" style="background:${this._config.color_active || "#2196f3"}"></div>
-            <span class="color-hex" id="esl-hex-active">${this._config.color_active || "#2196f3"}</span>
+          <div class="color-section" id="esl-cp-active">
+            <div class="color-swatches">
+              ${PALETTE.map(c => `<div class="color-swatch${c === activeColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+            </div>
+            <div class="color-hex-row">
+              <div class="color-current" id="esl-cur-active" style="background:${activeColor}"></div>
+              <input class="color-hex-input" id="esl-hex-active" type="text" value="${activeColor}" maxlength="7" placeholder="#rrggbb" />
+            </div>
           </div>
         </div>
         <div class="row">
           <label>Kolor tla: Kupione</label>
-          <div class="color-row">
-            <input type="color" id="esl-color-done" value="${this._config.color_completed || "#4caf50"}" />
-            <div class="color-preview" id="esl-preview-done" style="background:${this._config.color_completed || "#4caf50"}"></div>
-            <span class="color-hex" id="esl-hex-done">${this._config.color_completed || "#4caf50"}</span>
+          <div class="color-section" id="esl-cp-done">
+            <div class="color-swatches">
+              ${PALETTE.map(c => `<div class="color-swatch${c === doneColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+            </div>
+            <div class="color-hex-row">
+              <div class="color-current" id="esl-cur-done" style="background:${doneColor}"></div>
+              <input class="color-hex-input" id="esl-hex-done" type="text" value="${doneColor}" maxlength="7" placeholder="#rrggbb" />
+            </div>
+          </div>
+        </div>
+        <hr class="sep"/>
+        <div class="row">
+          <label>Kategorie</label>
+          <div class="check-row" id="esl-chk-cat-row">
+            <input type="checkbox" id="esl-chk-cat" ${showCat ? "checked" : ""} />
+            <span class="check-label">Grupuj i sortuj po kategoriach</span>
+          </div>
+          <div class="check-row" id="esl-chk-badge-row">
+            <input type="checkbox" id="esl-chk-badge" ${showBadge ? "checked" : ""} />
+            <span class="check-label">Pokazuj nazwe kategorii na pozycji</span>
           </div>
         </div>
       </div>`;
     this._populateEntities();
+
+    // Basic inputs
     this.querySelector("#esl-entity").addEventListener("change", e => { this._config = { ...this._config, entity: e.target.value }; this._fire(); });
     this.querySelector("#esl-title").addEventListener("input", e => { this._config = { ...this._config, title: e.target.value }; this._fire(); });
     this.querySelector("#esl-sort").addEventListener("change", e => { this._config = { ...this._config, sort_by: e.target.value }; this._fire(); });
-    this.querySelector("#esl-color-active").addEventListener("input", e => {
-      this._config = { ...this._config, color_active: e.target.value }; this._fire();
-      this.querySelector("#esl-preview-active").style.background = e.target.value;
-      this.querySelector("#esl-hex-active").textContent = e.target.value;
+
+    // Color picker: active
+    this._bindColorPicker("esl-cp-active", "esl-hex-active", "esl-cur-active", "color_active");
+    // Color picker: done
+    this._bindColorPicker("esl-cp-done", "esl-hex-done", "esl-cur-done", "color_completed");
+
+    // Category checkboxes
+    this.querySelector("#esl-chk-cat").addEventListener("change", e => {
+      this._config = { ...this._config, show_categories: e.target.checked }; this._fire();
     });
-    this.querySelector("#esl-color-done").addEventListener("input", e => {
-      this._config = { ...this._config, color_completed: e.target.value }; this._fire();
-      this.querySelector("#esl-preview-done").style.background = e.target.value;
-      this.querySelector("#esl-hex-done").textContent = e.target.value;
+    this.querySelector("#esl-chk-badge").addEventListener("change", e => {
+      this._config = { ...this._config, show_category_badge: e.target.checked }; this._fire();
     });
+    // Make entire row clickable
+    this.querySelector("#esl-chk-cat-row").addEventListener("click", e => {
+      if (e.target.type === "checkbox") return;
+      const cb = this.querySelector("#esl-chk-cat"); cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
+    });
+    this.querySelector("#esl-chk-badge-row").addEventListener("click", e => {
+      if (e.target.type === "checkbox") return;
+      const cb = this.querySelector("#esl-chk-badge"); cb.checked = !cb.checked; cb.dispatchEvent(new Event("change"));
+    });
+  }
+
+  _bindColorPicker(sectionId, hexId, previewId, configKey) {
+    const section = this.querySelector(`#${sectionId}`);
+    const hexInput = this.querySelector(`#${hexId}`);
+    const preview = this.querySelector(`#${previewId}`);
+
+    const setColor = (color) => {
+      this._config = { ...this._config, [configKey]: color }; this._fire();
+      preview.style.background = color;
+      hexInput.value = color;
+      section.querySelectorAll(".color-swatch").forEach(s => {
+        s.classList.toggle("active", s.dataset.color === color);
+      });
+    };
+
+    section.querySelectorAll(".color-swatch").forEach(s => {
+      s.addEventListener("click", () => setColor(s.dataset.color));
+    });
+
+    hexInput.addEventListener("change", () => {
+      let v = hexInput.value.trim();
+      if (!v.startsWith("#")) v = "#" + v;
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(v.toLowerCase());
+    });
+    hexInput.addEventListener("keydown", e => { if (e.key === "Enter") hexInput.blur(); });
   }
 
   _fire() {
@@ -1080,7 +1171,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.5.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.5.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
