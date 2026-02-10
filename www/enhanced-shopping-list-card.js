@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.5.1
+ * Enhanced Shopping List Card v2.5.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -249,11 +249,22 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _render() {
     const title = this._config.title || "Lista zakupów";
-    const activeRgb = this._hexToRgb(this._config.color_active || "#2196f3");
-    const doneRgb = this._hexToRgb(this._config.color_completed || "#4caf50");
+    const activeColor = this._config.color_active || "#2196f3";
+    const doneColor = this._config.color_completed || "#4caf50";
+    const isActiveNone = activeColor === "none";
+    const isDoneNone = doneColor === "none";
+    const activeRgb = isActiveNone ? "128,128,128" : this._hexToRgb(activeColor);
+    const doneRgb = isDoneNone ? "128,128,128" : this._hexToRgb(doneColor);
+    const activeBg = isActiveNone ? "var(--secondary-background-color, rgba(128,128,128,0.06))" : `rgba(${activeRgb}, 0.35)`;
+    const doneBg = isDoneNone ? "var(--secondary-background-color, rgba(128,128,128,0.06))" : `rgba(${doneRgb}, 0.35)`;
     this.shadowRoot.innerHTML = `
       <style>
-        :host { --esl-active-rgb: ${activeRgb}; --esl-done-rgb: ${doneRgb}; }
+        :host {
+          --esl-active-rgb: ${activeRgb};
+          --esl-done-rgb: ${doneRgb};
+          --esl-active-bg: ${activeBg};
+          --esl-done-bg: ${doneBg};
+        }
         ${EnhancedShoppingListCard.CSS}
       </style>
       <ha-card>
@@ -771,10 +782,10 @@ class EnhancedShoppingListCard extends HTMLElement {
         z-index: 1; touch-action: pan-y; transition: transform .25s ease; cursor: pointer;
       }
       .active-list .item {
-        background-color: rgba(var(--esl-active-rgb), 0.20);
+        background-color: var(--esl-active-bg);
       }
       .completed-list .item {
-        background-color: rgba(var(--esl-done-rgb), 0.20);
+        background-color: var(--esl-done-bg);
       }
 
       /* --- checkbox --- */
@@ -798,8 +809,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       .item-body { flex: 1; min-width: 0; }
       .item-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .item-name {
+        flex: 1; min-width: 0;
         font-size: 16px; font-weight: 500; color: var(--primary-text-color); cursor: pointer;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
       .cat-badge {
         font-size: 11px; padding: 2px 8px; border-radius: 8px;
@@ -1020,6 +1032,19 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         }
         .color-swatch:hover { transform: scale(1.15); }
         .color-swatch.active { border-color: var(--primary-text-color); transform: scale(1.15); }
+        .color-swatch-none {
+          background: var(--card-background-color, #fff) !important;
+          border: 2.5px dashed var(--divider-color, #ccc);
+          position: relative; overflow: hidden;
+        }
+        .color-swatch-none::after {
+          content: ""; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+          background: repeating-linear-gradient(
+            135deg, transparent, transparent 45%, var(--divider-color, #ccc) 45%, var(--divider-color, #ccc) 55%, transparent 55%
+          );
+          opacity: .5;
+        }
+        .color-swatch-none.active { border-color: var(--primary-text-color); border-style: solid; }
         .color-hex-row { display: flex; align-items: center; gap: 8px; }
         .color-hex-input {
           flex: 1; padding: 6px 10px; font-size: 14px; font-family: monospace;
@@ -1064,11 +1089,12 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           <label>Kolor tla: Do kupienia</label>
           <div class="color-section" id="esl-cp-active">
             <div class="color-swatches">
+              <div class="color-swatch color-swatch-none${activeColor === 'none' ? ' active' : ''}" data-color="none" title="Brak (motyw)"></div>
               ${PALETTE.map(c => `<div class="color-swatch${c === activeColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
             </div>
             <div class="color-hex-row">
-              <div class="color-current" id="esl-cur-active" style="background:${activeColor}"></div>
-              <input class="color-hex-input" id="esl-hex-active" type="text" value="${activeColor}" maxlength="7" placeholder="#rrggbb" />
+              <div class="color-current" id="esl-cur-active" style="background:${activeColor === 'none' ? 'var(--card-background-color,#fff)' : activeColor}"></div>
+              <input class="color-hex-input" id="esl-hex-active" type="text" value="${activeColor}" maxlength="7" placeholder="#rrggbb lub none" />
             </div>
           </div>
         </div>
@@ -1076,11 +1102,12 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           <label>Kolor tla: Kupione</label>
           <div class="color-section" id="esl-cp-done">
             <div class="color-swatches">
+              <div class="color-swatch color-swatch-none${doneColor === 'none' ? ' active' : ''}" data-color="none" title="Brak (motyw)"></div>
               ${PALETTE.map(c => `<div class="color-swatch${c === doneColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
             </div>
             <div class="color-hex-row">
-              <div class="color-current" id="esl-cur-done" style="background:${doneColor}"></div>
-              <input class="color-hex-input" id="esl-hex-done" type="text" value="${doneColor}" maxlength="7" placeholder="#rrggbb" />
+              <div class="color-current" id="esl-cur-done" style="background:${doneColor === 'none' ? 'var(--card-background-color,#fff)' : doneColor}"></div>
+              <input class="color-hex-input" id="esl-hex-done" type="text" value="${doneColor}" maxlength="7" placeholder="#rrggbb lub none" />
             </div>
           </div>
         </div>
@@ -1134,7 +1161,8 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
 
     const setColor = (color) => {
       this._config = { ...this._config, [configKey]: color }; this._fire();
-      preview.style.background = color;
+      const isNone = color === "none";
+      preview.style.background = isNone ? "var(--card-background-color,#fff)" : color;
       hexInput.value = color;
       section.querySelectorAll(".color-swatch").forEach(s => {
         s.classList.toggle("active", s.dataset.color === color);
@@ -1146,9 +1174,10 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     });
 
     hexInput.addEventListener("change", () => {
-      let v = hexInput.value.trim();
+      let v = hexInput.value.trim().toLowerCase();
+      if (v === "none") { setColor("none"); return; }
       if (!v.startsWith("#")) v = "#" + v;
-      if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(v.toLowerCase());
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(v);
     });
     hexInput.addEventListener("keydown", e => { if (e.key === "Enter") hexInput.blur(); });
   }
@@ -1171,7 +1200,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.5.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.5.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
