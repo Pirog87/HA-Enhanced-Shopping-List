@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+permissions: {}
+
+jobs:
+  release:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create zip for release
+        run: |
+          cd custom_components/enhanced_shopping_list
+          zip -r ../../enhanced_shopping_list.zip .
+
+      - name: Upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./enhanced_shopping_list.zip
+          asset_name: enhanced_shopping_list.zip
+          asset_content_type: application/zip
