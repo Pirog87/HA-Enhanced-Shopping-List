@@ -4,9 +4,12 @@ A feature-rich shopping list card for Home Assistant that works with any `todo.*
 
 Rozbudowana lista zakupów dla Home Assistant — działa z każdą encją `todo.*`.
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/Pirog87/HA-Enhanced-Shopping-List)](https://github.com/Pirog87/HA-Enhanced-Shopping-List/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Validate](https://github.com/Pirog87/HA-Enhanced-Shopping-List/actions/workflows/validate.yml/badge.svg)](https://github.com/Pirog87/HA-Enhanced-Shopping-List/actions/workflows/validate.yml)
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Pirog87&repository=HA-Enhanced-Shopping-List&category=integration)
 
 ## Features
 
@@ -35,11 +38,13 @@ Rozbudowana lista zakupów dla Home Assistant — działa z każdą encją `todo
 ### HACS (recommended)
 
 1. Open HACS in Home Assistant
-2. Click the menu (3 dots) > **Custom repositories**
-3. Paste this repository URL: `https://github.com/Pirog87/HA-Enhanced-Shopping-List`
-4. Category: **Integration**
-5. Click **Install**
-6. Restart Home Assistant
+2. Search for **Enhanced Shopping List**
+3. Click **Download**
+4. Restart Home Assistant
+
+Or click the button below:
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Pirog87&repository=HA-Enhanced-Shopping-List&category=integration)
 
 ### Manual installation
 
