@@ -844,13 +844,14 @@ class EnhancedShoppingListCard extends HTMLElement {
 
       const endSwipe = () => {
         if (!ts) return;
+        const halfWidth = itemEl.offsetWidth * 0.5;
         itemEl.style.transition = "transform 0.25s ease";
-        if (off > 80 && !isCompleted) {
+        if (off > halfWidth && !isCompleted) {
           // Right swipe: complete
           itemEl.style.transform = "";
           swipeRow.className = "swipe-row";
           this._toggleComplete(item);
-        } else if (off < -80) {
+        } else if (off < -halfWidth) {
           // Left swipe: show delete confirmation
           ts = null;
           itemEl.style.transform = "";
