@@ -53,6 +53,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entries."""
+    return True
+
+
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     hass.data.pop(DOMAIN, None)
@@ -79,12 +84,16 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         ])
     except RuntimeError:
         _LOGGER.debug("Static path already registered: %s", URL_BASE)
+    except Exception:
+        _LOGGER.exception("Failed to register static path %s", URL_BASE)
+        return
 
     # Step 2: Inject as extra JS (loads on every page, all Lovelace modes)
     add_extra_js_url(hass, url_with_cache_buster)
 
     # Step 3: Also register as Lovelace resource (persistent across restarts,
-    # needed for Chromecast displays and as fallback)
+    # needed for Chromecast displays and as fallback).
+    # Runs with retries since lovelace may not be ready yet at startup.
     await _async_register_lovelace_resource(hass, url_with_cache_buster)
 
     _LOGGER.debug("Frontend registered: %s", url_with_cache_buster)
@@ -94,8 +103,29 @@ async def _async_register_lovelace_resource(
     hass: HomeAssistant, url: str, *, _retries: int = 0
 ) -> None:
     """Register JS as a Lovelace module resource (storage mode only)."""
+    max_retries = 10
+
     lovelace = hass.data.get("lovelace")
     if lovelace is None:
+        if _retries < max_retries:
+            _LOGGER.debug(
+                "Lovelace not ready yet, retry %s/%s in 3s", _retries + 1, max_retries
+            )
+            async_call_later(
+                hass,
+                3,
+                lambda _now: hass.async_create_task(
+                    _async_register_lovelace_resource(
+                        hass, url, _retries=_retries + 1
+                    )
+                ),
+            )
+        else:
+            _LOGGER.warning(
+                "Lovelace data not available after %s retries; "
+                "resource not registered (card still works via extra_js)",
+                max_retries,
+            )
         return
 
     # Handle both attribute and dict-style access (varies across HA versions)
@@ -104,30 +134,47 @@ async def _async_register_lovelace_resource(
     elif isinstance(lovelace, dict) and "resources" in lovelace:
         resources = lovelace["resources"]
     else:
+        _LOGGER.debug("Lovelace has no resources collection — skipping")
         return
 
     if not resources.loaded:
-        if _retries < 5:
+        if _retries < max_retries:
+            _LOGGER.debug(
+                "Lovelace resources not loaded, retry %s/%s in 3s",
+                _retries + 1,
+                max_retries,
+            )
             async_call_later(
                 hass,
-                5,
+                3,
                 lambda _now: hass.async_create_task(
                     _async_register_lovelace_resource(
                         hass, url, _retries=_retries + 1
                     )
                 ),
             )
+        else:
+            _LOGGER.warning(
+                "Lovelace resources not loaded after %s retries; "
+                "resource not registered (card still works via extra_js)",
+                max_retries,
+            )
         return
 
     url_path = url.split("?")[0]
 
-    for item in resources.async_items():
-        existing_path = item.get("url", "").split("?")[0]
-        if existing_path == url_path:
-            if item["url"] != url:
-                await resources.async_update_item(
-                    item["id"], {"res_type": "module", "url": url}
-                )
-            return
+    try:
+        for item in resources.async_items():
+            existing_path = item.get("url", "").split("?")[0]
+            if existing_path == url_path:
+                if item["url"] != url:
+                    await resources.async_update_item(
+                        item["id"], {"res_type": "module", "url": url}
+                    )
+                    _LOGGER.debug("Updated Lovelace resource URL: %s", url)
+                return
 
-    await resources.async_create_item({"res_type": "module", "url": url})
+        await resources.async_create_item({"res_type": "module", "url": url})
+        _LOGGER.debug("Created Lovelace resource: %s", url)
+    except Exception:
+        _LOGGER.exception("Failed to register Lovelace resource")
