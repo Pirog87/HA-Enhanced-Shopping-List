@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from pathlib import Path
 
+from aiohttp import web
 from homeassistant.components.frontend import add_extra_js_url, remove_extra_js_url
-from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -33,9 +35,32 @@ CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
 _MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text())
 VERSION = _MANIFEST.get("version", "0.0.0")
 
-# JS file path — its mtime is used as cache buster (changes only when
-# HACS actually updates the file, not on every reload).
+# JS file path
 _JS_PATH = Path(__file__).parent / CARD_FILENAME
+
+
+class ESLCardView(HomeAssistantView):
+    """Serve the JS card file with no-cache headers."""
+
+    url = CARD_URL
+    name = "esl_card_js"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.Response:
+        """Serve JS with explicit no-cache headers."""
+        try:
+            content = _JS_PATH.read_bytes()
+        except FileNotFoundError:
+            return web.Response(status=404)
+        return web.Response(
+            body=content,
+            content_type="application/javascript; charset=utf-8",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -51,10 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
 
-    # Cache buster based on JS file mtime — changes only when the file on
-    # disk is updated (e.g. via HACS), stays the same on plain reload.
-    file_ts = str(int(_JS_PATH.stat().st_mtime))
-    await _async_register_frontend(hass, file_ts)
+    # Cache buster: time-based, changes on every reload to force fresh JS
+    setup_ts = str(int(time.time()))
+    await _async_register_frontend(hass, setup_ts)
 
     # Clean up stale URL only *after* the new one is active, and only if
     # the cache buster actually changed (i.e. the file was updated).
@@ -65,7 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except (KeyError, ValueError):
             pass
 
-    _LOGGER.info("Enhanced Shopping List v%s loaded (ts=%s)", VERSION, file_ts)
+    _LOGGER.info("Enhanced Shopping List v%s loaded (ts=%s)", VERSION, setup_ts)
     return True
 
 
@@ -100,21 +124,14 @@ async def _async_register_frontend(hass: HomeAssistant, setup_ts: str) -> None:
     # Store URL so async_unload_entry can remove it on reload
     hass.data[DOMAIN]["js_url"] = url_with_cache_buster
 
-    # Step 1: Register static HTTP path so HA serves the JS file
-    # cache_headers=False so browser always checks for updated file
+    # Step 1: Register HTTP view that serves JS with no-cache headers.
+    # The view prevents browser caching entirely, ensuring updates are
+    # always picked up after integration reload without manual cache clear.
     try:
-        await hass.http.async_register_static_paths([
-            StaticPathConfig(
-                url_path=URL_BASE,
-                path=str(Path(__file__).parent),
-                cache_headers=False,
-            )
-        ])
-    except RuntimeError:
-        _LOGGER.debug("Static path already registered: %s", URL_BASE)
+        hass.http.register_view(ESLCardView())
     except Exception:
-        _LOGGER.exception("Failed to register static path %s", URL_BASE)
-        return
+        # View may already be registered from a previous load
+        _LOGGER.debug("JS view already registered: %s", CARD_URL)
 
     # Step 2: Inject as extra JS (loads on every page, all Lovelace modes)
     add_extra_js_url(hass, url_with_cache_buster)
