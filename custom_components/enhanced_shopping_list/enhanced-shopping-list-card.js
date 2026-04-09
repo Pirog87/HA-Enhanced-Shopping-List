@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.11.2
+ * Enhanced Shopping List Card v2.11.3
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -1362,12 +1362,16 @@ class EnhancedShoppingListCard extends HTMLElement {
       .content { padding: 8px 12px 12px; }
 
       /* --- add --- */
-      .add-section { position: relative; margin-bottom: 14px; }
+      .add-section {
+        position: relative; margin-bottom: 14px; padding: 10px;
+        border: 1.5px solid var(--divider-color, rgba(127,127,127,.25));
+        border-radius: var(--R); background: var(--secondary-background-color, rgba(127,127,127,.06));
+      }
       .input-row { display: flex; align-items: center; gap: 10px; }
       .add-input {
-        flex:1; padding: 11px 14px; border: 1.5px solid var(--divider-color,#ddd); border-radius: var(--R);
+        flex:1; padding: 13px 16px; border: 2px solid var(--divider-color,#ddd); border-radius: var(--R);
         background: var(--card-background-color,#fff); color: var(--primary-text-color);
-        font-size: 15px; font-family: inherit; outline: none; transition: border-color .2s;
+        font-size: 16px; font-family: inherit; outline: none; transition: border-color .2s;
       }
       .add-input:focus { border-color: var(--primary-color); }
       .add-input::placeholder { color: var(--secondary-text-color); opacity: .6; }
@@ -2307,7 +2311,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.11.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.11.3 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
