@@ -70,6 +70,9 @@ const STRINGS = {
     add_placeholder: "Dodaj produkt...",
     add_title: "Dodaj",
     add_category_title: "Wybierz kategorię przed dodaniem",
+    store_mode: "W sklepie",
+    store_mode_exit: "Wyjdź",
+    store_done: "Wszystko kupione!",
     to_buy: "Do kupienia",
     bought: "Kupione",
     clear_bought: "Wyczyść kupione",
@@ -124,6 +127,9 @@ const STRINGS = {
     add_placeholder: "Add product...",
     add_title: "Add",
     add_category_title: "Pick category before adding",
+    store_mode: "In store",
+    store_mode_exit: "Exit",
+    store_done: "All done!",
     to_buy: "To buy",
     bought: "Bought",
     clear_bought: "Clear bought",
@@ -462,6 +468,9 @@ class EnhancedShoppingListCard extends HTMLElement {
             <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="${this._t("toggle_notes")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
+            <button class="hdr-toggle store-mode-btn" title="${this._t("store_mode")}">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="9,22 9,12 15,12 15,22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
           </div>
         </div>
         <div class="content">
@@ -537,6 +546,9 @@ class EnhancedShoppingListCard extends HTMLElement {
     // Category picker for new items
     const catBtn = R.querySelector(".add-cat-btn");
     catBtn.addEventListener("click", () => this._toggleAddCategoryPicker());
+
+    // Store mode
+    R.querySelector(".store-mode-btn").addEventListener("click", () => this._enterStoreMode());
 
     R.querySelectorAll(".hdr-toggle").forEach(btn => {
       btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
@@ -617,6 +629,76 @@ class EnhancedShoppingListCard extends HTMLElement {
       bar.style.display = "none";
       bar.innerHTML = "";
     }
+  }
+
+  /* ---------- store mode ---------- */
+
+  _enterStoreMode() {
+    const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
+    const overlay = document.createElement("div");
+    overlay.className = "store-overlay";
+    const catEnabled = this._getViewPref("show_categories");
+    const showHeaders = this._getViewPref("show_category_headers");
+    const showBadge = this._getViewPref("show_category_badge");
+
+    let listHtml = "";
+    if (!active.length) {
+      listHtml = `<div class="store-done">${this._t("store_done")}</div>`;
+    } else {
+      let lastCat = null;
+      for (const item of active) {
+        if (catEnabled && showHeaders && item.category !== lastCat) {
+          const catLabel = item.category || this._t("other");
+          listHtml += `<div class="store-cat-header"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg> ${esc(catLabel)}</div>`;
+          lastCat = item.category;
+        }
+        const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
+        const qtyBadge = item.quantity > 1 ? `<span class="store-qty">${item.quantity} ${this._t("pcs")}</span>` : "";
+        listHtml += `<div class="store-item" data-uid="${item.uid}">
+          <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><circle cx="12" cy="12" r="10" fill="none" stroke="var(--primary-color)" stroke-width="2"/></svg></span>
+          <span class="store-name">${esc(item.name)}</span>${catBadge}${qtyBadge}
+        </div>`;
+      }
+    }
+
+    overlay.innerHTML = `
+      <div class="store-header">
+        <span class="store-title">${this._t("store_mode")}</span>
+        <span class="store-counter">${active.length}</span>
+        <button class="store-exit">${this._t("store_mode_exit")}</button>
+      </div>
+      <div class="store-list">${listHtml}</div>`;
+
+    this.shadowRoot.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add("store-open"));
+
+    overlay.querySelector(".store-exit").addEventListener("click", () => this._exitStoreMode());
+
+    overlay.querySelectorAll(".store-item").forEach(el => {
+      el.addEventListener("click", async () => {
+        const item = this._items.find(i => i.uid === el.dataset.uid);
+        if (!item) return;
+        el.classList.add("store-item-done");
+        setTimeout(async () => {
+          await this._toggleComplete(item);
+          this._refreshStoreMode();
+        }, 350);
+      });
+    });
+  }
+
+  _refreshStoreMode() {
+    const overlay = this.shadowRoot.querySelector(".store-overlay");
+    if (!overlay) return;
+    overlay.remove();
+    this._enterStoreMode();
+  }
+
+  _exitStoreMode() {
+    const overlay = this.shadowRoot.querySelector(".store-overlay");
+    if (!overlay) return;
+    overlay.classList.remove("store-open");
+    setTimeout(() => overlay.remove(), 250);
   }
 
   _updateLists() {
@@ -1506,6 +1588,77 @@ class EnhancedShoppingListCard extends HTMLElement {
         .size-compact .item { padding: 2px 6px; }
         /* comfortable tones down slightly on mobile */
         .size-comfortable .item { padding: 8px 10px; min-height: 52px; }
+      }
+
+      /* --- store mode overlay --- */
+      .store-overlay {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+        background: var(--primary-background-color, #111);
+        color: var(--primary-text-color, #fff);
+        display: flex; flex-direction: column;
+        opacity: 0; transition: opacity .25s ease;
+        overflow: hidden;
+      }
+      .store-overlay.store-open { opacity: 1; }
+      .store-header {
+        display: flex; align-items: center; gap: 12px;
+        padding: 16px 20px; flex-shrink: 0;
+        border-bottom: 2px solid var(--divider-color, rgba(127,127,127,.2));
+      }
+      .store-title {
+        font-size: 22px; font-weight: 700; flex: 1;
+      }
+      .store-counter {
+        font-size: 18px; font-weight: 700; padding: 4px 14px;
+        border-radius: 20px; background: var(--primary-color); color: #fff;
+      }
+      .store-exit {
+        padding: 10px 24px; border-radius: 10px; border: 2px solid var(--divider-color,#555);
+        background: transparent; color: var(--primary-text-color); font-size: 16px;
+        font-weight: 600; cursor: pointer; transition: all .15s;
+      }
+      .store-exit:hover { border-color: var(--primary-color); color: var(--primary-color); }
+      .store-list {
+        flex: 1; overflow-y: auto; padding: 8px 12px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .store-cat-header {
+        display: flex; align-items: center; gap: 8px;
+        padding: 18px 8px 8px; font-size: 14px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .6px;
+        color: var(--secondary-text-color); opacity: .8;
+      }
+      .store-item {
+        display: flex; align-items: center; gap: 16px;
+        padding: 18px 16px; margin: 6px 0; border-radius: 14px;
+        background: var(--esl-active-bg);
+        cursor: pointer; transition: all .3s ease;
+        min-height: 64px; box-sizing: border-box;
+        user-select: none; -webkit-user-select: none;
+        border: 1.5px solid transparent;
+      }
+      .store-item:active {
+        transform: scale(.97); border-color: var(--primary-color);
+      }
+      .store-item-done {
+        opacity: .3; transform: scale(.95) translateX(40px);
+        text-decoration: line-through;
+      }
+      .store-check { flex-shrink: 0; display: flex; }
+      .store-name { flex: 1; font-size: 20px; font-weight: 500; }
+      .store-badge {
+        font-size: 12px; padding: 3px 10px; border-radius: 10px;
+        background: rgba(var(--esl-active-rgb), 0.25);
+        color: var(--secondary-text-color); white-space: nowrap;
+      }
+      .store-qty {
+        font-size: 14px; font-weight: 700; padding: 4px 12px;
+        border-radius: 10px; background: var(--primary-color); color: #fff;
+        white-space: nowrap;
+      }
+      .store-done {
+        text-align: center; padding: 60px 20px;
+        font-size: 24px; font-weight: 600; opacity: .6;
       }
     `;
   }
