@@ -36,9 +36,13 @@ function formatSummary(name, qty, notes, category) {
   return s;
 }
 
+function stripDiacritics(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\u0142/g, "l").replace(/\u0141/g, "L");
+}
+
 function fuzzyScore(query, target) {
-  const q = query.toLowerCase();
-  const t = target.toLowerCase();
+  const q = stripDiacritics(query.toLowerCase());
+  const t = stripDiacritics(target.toLowerCase());
   if (t.includes(q)) return 1000 - t.indexOf(q);
   let qi = 0, score = 0, lastIdx = -1;
   for (let ti = 0; ti < t.length && qi < q.length; ti++) {
@@ -1008,7 +1012,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (q.length < 2) { this._hideSuggestions(); return; }
     const scored = this._items.map(i => ({ i, s: fuzzyScore(q, i.name) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
     const seen = new Set(), uniq = [];
-    for (const x of scored) { const k = x.i.name.toLowerCase(); if (!seen.has(k)) { seen.add(k); uniq.push(x); } }
+    for (const x of scored) { const k = stripDiacritics(x.i.name.toLowerCase()); if (!seen.has(k)) { seen.add(k); uniq.push(x); } }
     this._suggestions = uniq.slice(0, 5);
     if (!this._suggestions.length) { box.style.display = "none"; return; }
     box.style.display = "";
