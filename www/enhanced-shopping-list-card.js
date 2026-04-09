@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.11.1
+ * Enhanced Shopping List Card v2.11.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -461,7 +461,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           <span class="header-title">${esc(title)}</span>
           <div class="header-toggles">
             <button class="hdr-toggle store-mode-btn" title="${this._t("store_mode")}">
-              <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="1.5"/><path d="M16 10a4 4 0 01-8 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              <svg viewBox="0 0 24 24" width="26" height="26"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="1.5"/><path d="M16 10a4 4 0 01-8 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
             </button>
             <button class="hdr-toggle${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" title="${this._t("toggle_group")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -1354,8 +1354,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .hdr-toggle:hover { background: rgba(128,128,128,.12); opacity: .8; }
       .hdr-toggle.hdr-on { color: var(--primary-color); opacity: 1; }
-      .store-mode-btn { opacity: 1; padding: 5px; margin-right: 2px; color: #b71c1c; }
-      .store-mode-btn:hover { color: #e53935; }
+      .store-mode-btn { opacity: 1 !important; padding: 5px; margin-right: 2px; color: #b71c1c !important; }
+      .store-mode-btn:hover { color: #e53935 !important; }
       .hdr-toggle-sm { padding: 4px; }
       .hdr-toggle-sm svg { width: 14px; height: 14px; }
       .done-toggles { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
@@ -2307,7 +2307,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.11.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.11.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
