@@ -69,6 +69,7 @@ const STRINGS = {
   pl: {
     add_placeholder: "Dodaj produkt...",
     add_title: "Dodaj",
+    add_category_title: "Wybierz kategorię przed dodaniem",
     to_buy: "Do kupienia",
     bought: "Kupione",
     clear_bought: "Wyczyść kupione",
@@ -122,6 +123,7 @@ const STRINGS = {
   en: {
     add_placeholder: "Add product...",
     add_title: "Add",
+    add_category_title: "Pick category before adding",
     to_buy: "To buy",
     bought: "Bought",
     clear_bought: "Clear bought",
@@ -188,6 +190,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._config = {};
     this._items = [];
     this._inputValue = "";
+    this._pendingCategory = "";
     this._suggestions = [];
     this._completedExpanded = false;
     this._debounceTimer = null;
@@ -373,13 +376,15 @@ class EnhancedShoppingListCard extends HTMLElement {
         await this._callService("update_item", { item: done.uid, status: "needs_action" });
         await this._fetchItems();
       } else {
-        await this._addItem(name);
+        await this._addItem(name, 1, "", this._pendingCategory);
       }
     }
     this._inputValue = "";
+    this._pendingCategory = "";
     const inp = this.shadowRoot.querySelector(".add-input");
     if (inp) inp.value = "";
     this._hideSuggestions();
+    this._setAddCategory("");
   }
 
   _sortItems(items) {
@@ -463,12 +468,23 @@ class EnhancedShoppingListCard extends HTMLElement {
           <div class="add-section">
             <div class="input-row">
               <input class="add-input" type="text" placeholder="${this._t("add_placeholder")}" />
+              <button class="add-cat-btn" title="${this._t("add_category_title")}">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="var(--secondary-text-color)" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="var(--secondary-text-color)"/></svg>
+              </button>
               <button class="add-btn" title="${this._t("add_title")}">
                 <svg viewBox="0 0 24 24" width="28" height="28">
                   <circle cx="12" cy="12" r="11" fill="var(--primary-color)"/>
                   <path d="M12 7v10M7 12h10" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
                 </svg>
               </button>
+            </div>
+            <div class="pending-cat-bar" style="display:none"></div>
+            <div class="add-cat-picker" style="display:none">
+              <div class="cat-chips add-cat-chips"></div>
+              <div class="cat-input-row">
+                <input class="cat-input add-cat-input" type="text" placeholder="${this._t("new_category")}" />
+                <button class="cat-save add-cat-save">${this._t("save")}</button>
+              </div>
             </div>
             <div class="suggestions" style="display:none"></div>
           </div>
@@ -517,6 +533,11 @@ class EnhancedShoppingListCard extends HTMLElement {
     inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); this._addCurrentInput(); } });
     inp.addEventListener("blur", () => setTimeout(() => this._hideSuggestions(), 200));
     R.querySelector(".add-btn").addEventListener("click", () => this._addCurrentInput());
+
+    // Category picker for new items
+    const catBtn = R.querySelector(".add-cat-btn");
+    catBtn.addEventListener("click", () => this._toggleAddCategoryPicker());
+
     R.querySelectorAll(".hdr-toggle").forEach(btn => {
       btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
     });
@@ -542,6 +563,60 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._suggestions = [];
     const s = this.shadowRoot.querySelector(".suggestions");
     if (s) s.style.display = "none";
+  }
+
+  _toggleAddCategoryPicker() {
+    const R = this.shadowRoot;
+    const picker = R.querySelector(".add-cat-picker");
+    const btn = R.querySelector(".add-cat-btn");
+    const open = picker.style.display !== "none";
+    if (open) {
+      picker.style.display = "none";
+      btn.classList.remove("add-cat-active");
+      return;
+    }
+    picker.style.display = "";
+    btn.classList.add("add-cat-active");
+    const cats = this._getCategories();
+    const chipsEl = picker.querySelector(".add-cat-chips");
+    chipsEl.innerHTML = cats.map(c =>
+      `<span class="cat-chip${c === this._pendingCategory ? ' cat-chip-active' : ''}" data-cat="${esc(c)}">${esc(c)}</span>`
+    ).join("");
+    chipsEl.querySelectorAll(".cat-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const cat = chip.dataset.cat;
+        this._setAddCategory(cat === this._pendingCategory ? "" : cat);
+      });
+    });
+    const inp = picker.querySelector(".add-cat-input");
+    inp.value = this._pendingCategory || "";
+    const saveBtn = picker.querySelector(".add-cat-save");
+    const newSave = saveBtn.cloneNode(true); saveBtn.replaceWith(newSave);
+    newSave.addEventListener("click", () => {
+      this._setAddCategory(inp.value.trim());
+    });
+    inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); newSave.click(); } };
+    setTimeout(() => inp.focus(), 50);
+  }
+
+  _setAddCategory(cat) {
+    this._pendingCategory = cat;
+    const R = this.shadowRoot;
+    const bar = R.querySelector(".pending-cat-bar");
+    const btn = R.querySelector(".add-cat-btn");
+    const picker = R.querySelector(".add-cat-picker");
+    picker.style.display = "none";
+    if (cat) {
+      btn.classList.add("add-cat-active");
+      bar.style.display = "flex";
+      bar.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg>` +
+        `<span>${esc(cat)}</span><button class="pending-cat-clear" title="×">×</button>`;
+      bar.querySelector(".pending-cat-clear").addEventListener("click", () => this._setAddCategory(""));
+    } else {
+      btn.classList.remove("add-cat-active");
+      bar.style.display = "none";
+      bar.innerHTML = "";
+    }
   }
 
   _updateLists() {
@@ -1078,6 +1153,31 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .add-input:focus { border-color: var(--primary-color); }
       .add-input::placeholder { color: var(--secondary-text-color); opacity: .6; }
+      .add-cat-btn {
+        background: none; border: 1.5px solid var(--divider-color,#ddd); padding: 0; cursor: pointer; display: flex;
+        align-items: center; justify-content: center; width: 40px; height: 40px;
+        flex-shrink: 0; border-radius: var(--R); transition: all .15s;
+      }
+      .add-cat-btn:hover { border-color: var(--primary-color); }
+      .add-cat-btn.add-cat-active {
+        border-color: var(--primary-color); background: rgba(var(--esl-active-rgb), 0.15);
+      }
+      .add-cat-btn.add-cat-active svg path, .add-cat-btn.add-cat-active svg circle {
+        stroke: var(--primary-color); fill: var(--primary-color);
+      }
+      .pending-cat-bar {
+        display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-top: 4px;
+        font-size: 12px; color: var(--primary-color); font-weight: 600;
+      }
+      .pending-cat-clear {
+        background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
+        color: var(--secondary-text-color); padding: 0 4px; font-weight: 700;
+      }
+      .pending-cat-clear:hover { color: var(--error-color, #e53935); }
+      .add-cat-picker {
+        padding: 10px 0 4px; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
+        margin-bottom: 4px;
+      }
       .add-btn {
         background: none; border: none; padding: 0; cursor: pointer; display: flex;
         align-items: center; justify-content: center; width: 40px; height: 40px;
