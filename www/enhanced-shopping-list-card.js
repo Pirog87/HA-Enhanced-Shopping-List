@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.12.0
+ * Enhanced Shopping List Card v2.12.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -119,6 +119,7 @@ const STRINGS = {
     ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
     ed_item_size: "Rozmiar pozycji",
     ed_swipe_threshold: "Próg swipe (% szerokości)",
+    ed_store_size: "Rozmiar pozycji w trybie sklepu",
     ed_size_compact: "Kompaktowy",
     ed_size_normal: "Normalny",
     ed_size_comfortable: "Wygodny",
@@ -179,6 +180,7 @@ const STRINGS = {
     ed_show_notes: "Show note icon on items",
     ed_item_size: "Item size",
     ed_swipe_threshold: "Swipe threshold (% of width)",
+    ed_store_size: "Item size in store mode",
     ed_size_compact: "Compact",
     ed_size_normal: "Normal",
     ed_size_comfortable: "Comfortable",
@@ -696,9 +698,15 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
     }
 
+    const storeSize = localStorage.getItem("esl_store_size") || this._config.store_item_size || "normal";
     overlay.innerHTML = `
       <div class="store-header">
         <span class="store-title">${this._t("store_mode")}</span>
+        <div class="store-size-picker">
+          <button class="store-size-btn${storeSize === "compact" ? " store-size-active" : ""}" data-sz="compact">${this._t("ed_size_compact")}</button>
+          <button class="store-size-btn${storeSize === "normal" ? " store-size-active" : ""}" data-sz="normal">${this._t("ed_size_normal")}</button>
+          <button class="store-size-btn${storeSize === "comfortable" ? " store-size-active" : ""}" data-sz="comfortable">${this._t("ed_size_comfortable")}</button>
+        </div>
         <span class="store-counter">${active.length}</span>
         <button class="store-exit">${this._t("store_mode_exit")}</button>
       </div>
@@ -706,7 +714,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         <div class="store-progress-fill" style="width:${pct}%;background:${pct < 30 ? '#e53935' : pct < 60 ? '#ff9800' : pct < 90 ? '#ffc107' : '#4caf50'}"></div>
         <span class="store-progress-text">${done}/${total} ${this._t("store_progress")} (${pct}%)</span>
       </div>
-      <div class="store-list">${listHtml}</div>
+      <div class="store-list store-sz-${storeSize}">${listHtml}</div>
       <div class="store-undo-toast" style="display:none">
         <span class="store-undo-text"></span>
         <button class="store-undo-btn">${this._t("store_undo")}</button>
@@ -716,6 +724,18 @@ class EnhancedShoppingListCard extends HTMLElement {
     requestAnimationFrame(() => overlay.classList.add("store-open"));
 
     overlay.querySelector(".store-exit").addEventListener("click", () => this._exitStoreMode());
+
+    // Size picker
+    overlay.querySelectorAll(".store-size-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const sz = btn.dataset.sz;
+        localStorage.setItem("esl_store_size", sz);
+        const list = overlay.querySelector(".store-list");
+        list.className = `store-list store-sz-${sz}`;
+        overlay.querySelectorAll(".store-size-btn").forEach(b => b.classList.remove("store-size-active"));
+        btn.classList.add("store-size-active");
+      });
+    });
 
     // Auto-exit when all done
     if (!active.length && total > 0) {
@@ -1772,6 +1792,29 @@ class EnhancedShoppingListCard extends HTMLElement {
       .store-title {
         font-size: 22px; font-weight: 700; flex: 1;
       }
+      .store-size-picker {
+        display: flex; gap: 4px; background: rgba(127,127,127,.15);
+        border-radius: 8px; padding: 2px;
+      }
+      .store-size-btn {
+        padding: 5px 10px; border: none; border-radius: 6px; cursor: pointer;
+        font-size: 11px; font-weight: 600; background: transparent;
+        color: var(--secondary-text-color); transition: all .15s;
+        white-space: nowrap;
+      }
+      .store-size-btn:hover { background: rgba(127,127,127,.15); }
+      .store-size-active {
+        background: var(--primary-color) !important; color: #fff !important;
+      }
+      .store-sz-compact .store-item { padding: 8px 12px; min-height: 36px; }
+      .store-sz-compact .store-item-wrap { margin: 2px 0; }
+      .store-sz-compact .store-name { font-size: 16px; }
+      .store-sz-compact .store-check svg { width: 22px; height: 22px; }
+      .store-sz-compact .store-cat-header { padding: 12px 8px 4px; font-size: 12px; }
+      .store-sz-comfortable .store-item { padding: 18px 16px; min-height: 64px; }
+      .store-sz-comfortable .store-item-wrap { margin: 6px 0; }
+      .store-sz-comfortable .store-name { font-size: 22px; }
+      .store-sz-comfortable .store-check svg { width: 32px; height: 32px; }
       .store-counter {
         font-size: 18px; font-weight: 700; padding: 4px 14px;
         border-radius: 20px; background: var(--primary-color); color: #fff;
@@ -2017,9 +2060,10 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         .cat-order-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .cat-order-num { font-size: 11px; color: var(--secondary-text-color); opacity: .6; min-width: 16px; text-align: center; }
         .cat-order-btn {
-          background: none; border: none; padding: 2px 4px; cursor: pointer;
-          color: var(--secondary-text-color); border-radius: 4px;
+          background: none; border: none; padding: 6px 8px; cursor: pointer;
+          color: var(--secondary-text-color); border-radius: 6px;
           display: flex; align-items: center; transition: all .12s;
+          min-width: 32px; min-height: 32px; justify-content: center;
         }
         .cat-order-btn:hover { background: rgba(128,128,128,.15); color: var(--primary-text-color); }
         .cat-order-btn:disabled { opacity: .2; cursor: default; }
@@ -2160,6 +2204,23 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <span class="threshold-val" id="esl-threshold-val">${this._config.swipe_threshold || 50}%</span>
           </div>
         </div>
+        <div class="row">
+          <label>${this._t("ed_store_size")}</label>
+          <div class="size-picker" id="esl-store-size-picker">
+            <button class="size-btn${(this._config.store_item_size || "normal") === "compact" ? " size-active" : ""}" data-size="compact">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="5" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="10.75" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="16.5" width="18" height="2.5" rx="1" fill="currentColor"/></svg>
+              <span>${this._t("ed_size_compact")}</span>
+            </button>
+            <button class="size-btn${(this._config.store_item_size || "normal") === "normal" ? " size-active" : ""}" data-size="normal">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="4" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="10.5" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="17" width="18" height="3" rx="1" fill="currentColor"/></svg>
+              <span>${this._t("ed_size_normal")}</span>
+            </button>
+            <button class="size-btn${(this._config.store_item_size || "normal") === "comfortable" ? " size-active" : ""}" data-size="comfortable">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="3" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="10" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="17" width="18" height="4" rx="1.5" fill="currentColor"/></svg>
+              <span>${this._t("ed_size_comfortable")}</span>
+            </button>
+          </div>
+        </div>
       </div>`;
     this._populateEntities();
 
@@ -2221,6 +2282,15 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
       this._config = { ...this._config, swipe_threshold: parseInt(e.target.value) }; this._fire();
     });
 
+    // Store size picker
+    this.querySelectorAll("#esl-store-size-picker .size-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        this._config = { ...this._config, store_item_size: btn.dataset.size }; this._fire();
+        this.querySelectorAll("#esl-store-size-picker .size-btn").forEach(b => b.classList.remove("size-active"));
+        btn.classList.add("size-active");
+      });
+    });
+
     // Category order
     this._renderCatOrder();
   }
@@ -2261,10 +2331,10 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         <span class="cat-order-num">${i + 1}</span>
         <span class="cat-order-name">${esc(cat)}</span>
         <button class="cat-order-btn" data-dir="up" ${i === 0 ? "disabled" : ""}>
-          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5l-7 7h14z" fill="currentColor"/></svg>
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 5l-7 7h14z" fill="currentColor"/></svg>
         </button>
         <button class="cat-order-btn" data-dir="down" ${i === ordered.length - 1 ? "disabled" : ""}>
-          <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 19l-7-7h14z" fill="currentColor"/></svg>
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 19l-7-7h14z" fill="currentColor"/></svg>
         </button>
       </div>
     `).join("");
@@ -2355,7 +2425,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.12.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.12.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
