@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.11.3
+ * Enhanced Shopping List Card v2.11.4
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -700,7 +700,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         <button class="store-exit">${this._t("store_mode_exit")}</button>
       </div>
       <div class="store-progress-bar">
-        <div class="store-progress-fill" style="width:${pct}%"></div>
+        <div class="store-progress-fill" style="width:${pct}%;background:${pct < 30 ? '#e53935' : pct < 60 ? '#ff9800' : pct < 90 ? '#ffc107' : '#4caf50'}"></div>
         <span class="store-progress-text">${done}/${total} ${this._t("store_progress")} (${pct}%)</span>
       </div>
       <div class="store-list">${listHtml}</div>
@@ -1759,19 +1759,19 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .store-exit:hover { border-color: var(--primary-color); color: var(--primary-color); }
       .store-progress-bar {
-        position: relative; height: 28px; margin: 0 20px 8px;
-        background: rgba(127,127,127,.15); border-radius: 14px; overflow: hidden;
-        flex-shrink: 0;
+        position: relative; height: 36px; margin: 0 16px 10px;
+        background: rgba(127,127,127,.25); border-radius: 18px; overflow: hidden;
+        flex-shrink: 0; border: 2px solid rgba(127,127,127,.2);
       }
       .store-progress-fill {
         position: absolute; top: 0; left: 0; bottom: 0;
-        background: linear-gradient(90deg, #4caf50, #66bb6a);
-        border-radius: 14px; transition: width .5s ease;
+        border-radius: 18px; transition: width .5s ease, background .5s ease;
+        min-width: 8px;
       }
       .store-progress-text {
         position: absolute; inset: 0; display: flex; align-items: center;
-        justify-content: center; font-size: 13px; font-weight: 700;
-        color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.4);
+        justify-content: center; font-size: 15px; font-weight: 700;
+        color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6);
       }
       .store-list {
         flex: 1; overflow-y: auto; padding: 8px 12px;
@@ -2311,7 +2311,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.11.3 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.11.4 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
