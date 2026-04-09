@@ -3,5 +3,6 @@
   "render_readme": true,
   "domains": ["enhanced_shopping_list"],
   "homeassistant": "2024.1.0",
-  "content_in_root": false
+  "content_in_root": false,
+  "config_flow": true
 }
