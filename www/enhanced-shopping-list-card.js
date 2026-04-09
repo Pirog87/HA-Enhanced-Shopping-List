@@ -1021,7 +1021,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       const on = x.i.status === "needs_action";
       const badge = on ? `<span class="sg-badge">${x.i.quantity} ${this._t("pcs")}</span>` : `<span class="sg-badge sg-done">${this._t("bought").toLowerCase()}</span>`;
       const catInfo = x.i.category ? `<span class="sg-cat">${esc(x.i.category)}</span>` : "";
-      return `<div class="sg-item" data-uid="${x.i.uid}"><span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
+      const checkIcon = `<svg class="sg-check" viewBox="0 0 24 24" width="20" height="20"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="var(--primary-color)"/></svg>`;
+      return `<div class="sg-item" data-uid="${x.i.uid}">${checkIcon}<span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
     }).join("");
     box.querySelectorAll(".sg-item").forEach(el => {
       el.addEventListener("mousedown", e => {
@@ -1091,10 +1092,11 @@ class EnhancedShoppingListCard extends HTMLElement {
         box-shadow: 0 6px 16px rgba(0,0,0,.12); overflow: hidden;
       }
       .sg-item {
-        padding: 13px 14px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-        font-size: 15px; transition: background .12s; min-height: 44px; box-sizing: border-box;
+        padding: 16px 16px; cursor: pointer; display: flex; align-items: center; gap: 12px;
+        font-size: 19px; transition: background .12s; min-height: 56px; box-sizing: border-box;
       }
       .sg-item:hover { background: var(--secondary-background-color,#f5f5f5); }
+      .sg-check { flex-shrink: 0; opacity: 0.85; }
       .sg-name { flex: 1; }
       .sg-badge {
         font-size: 11px; padding: 2px 8px; border-radius: 10px;
