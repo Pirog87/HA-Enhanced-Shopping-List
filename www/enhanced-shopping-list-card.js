@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.10.0
+ * Enhanced Shopping List Card v2.10.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -654,8 +654,9 @@ class EnhancedShoppingListCard extends HTMLElement {
         }
         const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
         const qtyBadge = item.quantity > 1 ? `<span class="store-qty">${item.quantity} ${this._t("pcs")}</span>` : "";
+        const checkColor = this._config.check_color || "var(--primary-color)";
         listHtml += `<div class="store-item" data-uid="${item.uid}">
-          <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><circle cx="12" cy="12" r="10" fill="none" stroke="var(--primary-color)" stroke-width="2"/></svg></span>
+          <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           <span class="store-name">${esc(item.name)}</span>${catBadge}${qtyBadge}
         </div>`;
       }
@@ -675,14 +676,53 @@ class EnhancedShoppingListCard extends HTMLElement {
     overlay.querySelector(".store-exit").addEventListener("click", () => this._exitStoreMode());
 
     overlay.querySelectorAll(".store-item").forEach(el => {
-      el.addEventListener("click", async () => {
-        const item = this._items.find(i => i.uid === el.dataset.uid);
-        if (!item) return;
-        el.classList.add("store-item-done");
-        setTimeout(async () => {
-          await this._toggleComplete(item);
-          this._refreshStoreMode();
-        }, 350);
+      let ts = null, off = 0;
+      el.addEventListener("pointerdown", e => {
+        if (e.button !== 0) return;
+        ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
+        off = 0;
+      });
+      el.addEventListener("pointermove", e => {
+        if (!ts || ts.id !== e.pointerId) return;
+        const dx = e.clientX - ts.x, dy = e.clientY - ts.y;
+        if (!ts.dir) {
+          if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+            ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+            if (ts.dir === "h") {
+              try { el.setPointerCapture(e.pointerId); } catch(_) {}
+            } else { ts = null; return; }
+          } else return;
+        }
+        if (ts.dir === "h") {
+          off = Math.max(0, dx);
+          el.style.transition = "none";
+          el.style.transform = `translate3d(${off}px,0,0)`;
+          el.style.opacity = Math.max(0.3, 1 - off / el.offsetWidth);
+        }
+      });
+      const endSwipe = () => {
+        if (!ts) return;
+        const halfWidth = el.offsetWidth * 0.5;
+        el.style.transition = "all 0.3s ease";
+        if (off > halfWidth) {
+          el.style.transform = `translate3d(${el.offsetWidth}px,0,0)`;
+          el.style.opacity = "0";
+          const item = this._items.find(i => i.uid === el.dataset.uid);
+          if (item) {
+            setTimeout(async () => {
+              await this._toggleComplete(item);
+              this._refreshStoreMode();
+            }, 300);
+          }
+        } else {
+          el.style.transform = "";
+          el.style.opacity = "";
+        }
+        ts = null;
+      };
+      el.addEventListener("pointerup", endSwipe);
+      el.addEventListener("pointercancel", () => {
+        if (ts) { el.style.transition = "all 0.3s ease"; el.style.transform = ""; el.style.opacity = ""; ts = null; }
       });
     });
   }
@@ -1636,13 +1676,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         min-height: 64px; box-sizing: border-box;
         user-select: none; -webkit-user-select: none;
         border: 1.5px solid transparent;
-      }
-      .store-item:active {
-        transform: scale(.97); border-color: var(--primary-color);
-      }
-      .store-item-done {
-        opacity: .3; transform: scale(.95) translateX(40px);
-        text-decoration: line-through;
+        touch-action: pan-y;
       }
       .store-check { flex-shrink: 0; display: flex; }
       .store-name { flex: 1; font-size: 20px; font-weight: 500; }
@@ -2102,7 +2136,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.10.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.10.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
