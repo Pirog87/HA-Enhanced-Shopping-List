@@ -11,7 +11,7 @@ import logging
 import time
 from pathlib import Path
 
-from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.frontend import add_extra_js_url, remove_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -34,10 +34,6 @@ CARD_URL = f"{URL_BASE}/{CARD_FILENAME}"
 _MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text())
 VERSION = _MANIFEST.get("version", "0.0.0")
 
-# Unique cache buster per HA start — guarantees fresh JS on every restart
-_STARTUP_TS = str(int(time.time()))
-
-
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up via YAML — just ensure the integration is loaded."""
     return True
@@ -47,9 +43,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Enhanced Shopping List from a config entry (UI install)."""
     hass.data.setdefault(DOMAIN, {})
 
-    await _async_register_frontend(hass)
+    # Unique cache buster per setup — changes on every reload/restart,
+    # so browsers always fetch fresh JS after an update.
+    setup_ts = str(int(time.time()))
+    await _async_register_frontend(hass, setup_ts)
 
-    _LOGGER.info("Enhanced Shopping List v%s loaded (ts=%s)", VERSION, _STARTUP_TS)
+    _LOGGER.info("Enhanced Shopping List v%s loaded (ts=%s)", VERSION, setup_ts)
     return True
 
 
@@ -60,6 +59,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    # Remove previously registered extra JS URL so it doesn't accumulate
+    # stale entries across reloads.
+    old_url = hass.data.get(DOMAIN, {}).get("js_url")
+    if old_url:
+        try:
+            remove_extra_js_url(hass, old_url)
+        except (KeyError, ValueError):
+            _LOGGER.debug("Extra JS URL already removed: %s", old_url)
     hass.data.pop(DOMAIN, None)
     return True
 
@@ -68,9 +75,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 #  Frontend: serve JS and register as Lovelace resource
 # ------------------------------------------------------------------
 
-async def _async_register_frontend(hass: HomeAssistant) -> None:
+async def _async_register_frontend(hass: HomeAssistant, setup_ts: str) -> None:
     """Serve JS from integration directory and register as Lovelace resource."""
-    url_with_cache_buster = f"{CARD_URL}?v={VERSION}.{_STARTUP_TS}"
+    url_with_cache_buster = f"{CARD_URL}?v={VERSION}.{setup_ts}"
+
+    # Store URL so async_unload_entry can remove it on reload
+    hass.data[DOMAIN]["js_url"] = url_with_cache_buster
 
     # Step 1: Register static HTTP path so HA serves the JS file
     # cache_headers=False so browser always checks for updated file
