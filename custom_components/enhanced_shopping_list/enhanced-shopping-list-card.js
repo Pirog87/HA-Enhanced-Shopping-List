@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.12.2
+ * Enhanced Shopping List Card v2.13.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -115,6 +115,7 @@ const STRINGS = {
     ed_show_headers: "Pokazuj nagłówki grupowania kategorii",
     ed_cat_order: "Kolejność kategorii",
     ed_cat_order_empty: "Dodaj kategorie do produktów, aby ustalić kolejność",
+    ed_cat_rename: "Zmień nazwę kategorii",
     ed_view: "Widok",
     ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
     ed_item_size: "Rozmiar pozycji",
@@ -178,6 +179,7 @@ const STRINGS = {
     ed_show_headers: "Show category group headers",
     ed_cat_order: "Category order",
     ed_cat_order_empty: "Add categories to products to set the order",
+    ed_cat_rename: "Rename category",
     ed_view: "View",
     ed_show_notes: "Show note icon on items",
     ed_item_size: "Item size",
@@ -2077,6 +2079,14 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         .cat-order-btn:hover { background: rgba(128,128,128,.15); color: var(--primary-text-color); }
         .cat-order-btn:disabled { opacity: .2; cursor: default; }
         .cat-order-btn:disabled:hover { background: none; }
+        .cat-edit-btn { min-width: 28px; min-height: 28px; padding: 4px 6px; }
+        .cat-edit-btn:hover { color: var(--primary-color); }
+        .cat-rename-input {
+          width: 100%; padding: 4px 8px; border: 2px solid var(--primary-color);
+          border-radius: 6px; font-size: 14px; font-family: inherit;
+          background: var(--card-background-color, #fff); color: var(--primary-text-color);
+          outline: none;
+        }
         /* --- size picker --- */
         .threshold-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
         .threshold-row input[type="range"] { flex: 1; accent-color: var(--primary-color); }
@@ -2342,6 +2352,9 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
       <div class="cat-order-item" data-idx="${i}">
         <span class="cat-order-num">${i + 1}</span>
         <span class="cat-order-name">${esc(cat)}</span>
+        <button class="cat-order-btn cat-edit-btn" data-dir="edit" title="${this._t("ed_cat_rename")}">
+          <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor"/></svg>
+        </button>
         <button class="cat-order-btn" data-dir="up" ${i === 0 ? "disabled" : ""}>
           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 5l-7 7h14z" fill="currentColor"/></svg>
         </button>
@@ -2353,8 +2366,15 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
 
     container.querySelectorAll(".cat-order-btn").forEach(btn => {
       btn.addEventListener("click", () => {
-        const idx = parseInt(btn.closest(".cat-order-item").dataset.idx, 10);
+        const item = btn.closest(".cat-order-item");
+        const idx = parseInt(item.dataset.idx, 10);
         const dir = btn.dataset.dir;
+
+        if (dir === "edit") {
+          this._startCatRename(container, ordered, idx);
+          return;
+        }
+
         const newOrder = [...ordered];
         const swapIdx = dir === "up" ? idx - 1 : idx + 1;
         if (swapIdx < 0 || swapIdx >= newOrder.length) return;
@@ -2364,6 +2384,53 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         this._buildCatOrderUI(container, newOrder);
       });
     });
+  }
+
+  _startCatRename(container, ordered, idx) {
+    const oldName = ordered[idx];
+    const item = container.querySelector(`[data-idx="${idx}"]`);
+    const nameEl = item.querySelector(".cat-order-name");
+    nameEl.innerHTML = `<input class="cat-rename-input" type="text" value="${esc(oldName)}" />`;
+    const inp = nameEl.querySelector(".cat-rename-input");
+    inp.focus();
+    inp.select();
+
+    const doRename = async () => {
+      const newName = inp.value.trim();
+      if (!newName || newName === oldName) {
+        this._buildCatOrderUI(container, ordered);
+        return;
+      }
+      // Update category_order config
+      const newOrder = ordered.map(c => c === oldName ? newName : c);
+      this._config = { ...this._config, category_order: newOrder };
+      this._fire();
+
+      // Rename category in all items via HA service
+      if (this._hass && this._config.entity) {
+        try {
+          const res = await this._hass.callWS({ type: "todo/item/list", entity_id: this._config.entity });
+          const items = res.items || [];
+          for (const it of items) {
+            if (it.summary && it.summary.includes(`[${oldName}]`)) {
+              const updated = it.summary.replace(`[${oldName}]`, `[${newName}]`);
+              await this._hass.callService("todo", "update_item", {
+                item: it.uid, rename: updated,
+              }, { entity_id: this._config.entity });
+            }
+          }
+        } catch (e) {
+          console.error("ESL: category rename failed", e);
+        }
+      }
+      this._buildCatOrderUI(container, newOrder);
+    };
+
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); doRename(); }
+      if (e.key === "Escape") { this._buildCatOrderUI(container, ordered); }
+    });
+    inp.addEventListener("blur", () => doRename());
   }
 
   _bindSimpleColor(hexId, previewId, configKey, defaultCss) {
@@ -2437,7 +2504,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.12.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.13.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
