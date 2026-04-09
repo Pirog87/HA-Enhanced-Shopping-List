@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.13.0
+ * Enhanced Shopping List Card v2.13.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -2152,23 +2152,41 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         <hr class="sep"/>
         <div class="row">
           <label>${this._t("ed_text_color")}</label>
-          <div class="color-hex-row">
-            <div class="color-current" id="esl-cur-text" style="background:${textColor || 'var(--primary-text-color)'}"></div>
-            <input class="color-hex-input" id="esl-hex-text" type="text" value="${textColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+          <div class="color-section" id="esl-cp-text">
+            <div class="color-swatches">
+              <div class="color-swatch color-swatch-none${!textColor ? ' active' : ''}" data-color="" title="${this._t("ed_auto")}"></div>
+              ${PALETTE.map(c => `<div class="color-swatch${c === textColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+            </div>
+            <div class="color-hex-row">
+              <div class="color-current" id="esl-cur-text" style="background:${textColor || 'var(--primary-text-color)'}"></div>
+              <input class="color-hex-input" id="esl-hex-text" type="text" value="${textColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+            </div>
           </div>
         </div>
         <div class="row">
           <label>${this._t("ed_icon_color")}</label>
-          <div class="color-hex-row">
-            <div class="color-current" id="esl-cur-icon" style="background:${iconColor || 'var(--secondary-text-color)'}"></div>
-            <input class="color-hex-input" id="esl-hex-icon" type="text" value="${iconColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+          <div class="color-section" id="esl-cp-icon">
+            <div class="color-swatches">
+              <div class="color-swatch color-swatch-none${!iconColor ? ' active' : ''}" data-color="" title="${this._t("ed_auto")}"></div>
+              ${PALETTE.map(c => `<div class="color-swatch${c === iconColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+            </div>
+            <div class="color-hex-row">
+              <div class="color-current" id="esl-cur-icon" style="background:${iconColor || 'var(--secondary-text-color)'}"></div>
+              <input class="color-hex-input" id="esl-hex-icon" type="text" value="${iconColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+            </div>
           </div>
         </div>
         <div class="row">
           <label>${this._t("ed_check_color")}</label>
-          <div class="color-hex-row">
-            <div class="color-current" id="esl-cur-check" style="background:${checkColor || 'var(--primary-color)'}"></div>
-            <input class="color-hex-input" id="esl-hex-check" type="text" value="${checkColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+          <div class="color-section" id="esl-cp-check">
+            <div class="color-swatches">
+              <div class="color-swatch color-swatch-none${!checkColor ? ' active' : ''}" data-color="" title="${this._t("ed_auto")}"></div>
+              ${PALETTE.map(c => `<div class="color-swatch${c === checkColor ? ' active' : ''}" data-color="${c}" style="background:${c}"></div>`).join("")}
+            </div>
+            <div class="color-hex-row">
+              <div class="color-current" id="esl-cur-check" style="background:${checkColor || 'var(--primary-color)'}"></div>
+              <input class="color-hex-input" id="esl-hex-check" type="text" value="${checkColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+            </div>
           </div>
         </div>
         <hr class="sep"/>
@@ -2257,11 +2275,11 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     this._bindColorPicker("esl-cp-done", "esl-hex-done", "esl-cur-done", "color_completed");
 
     // Text color
-    this._bindSimpleColor("esl-hex-text", "esl-cur-text", "text_color", "var(--primary-text-color)");
+    this._bindColorPicker("esl-cp-text", "esl-hex-text", "esl-cur-text", "text_color", "var(--primary-text-color)");
     // Icon color
-    this._bindSimpleColor("esl-hex-icon", "esl-cur-icon", "icon_color", "var(--secondary-text-color)");
+    this._bindColorPicker("esl-cp-icon", "esl-hex-icon", "esl-cur-icon", "icon_color", "var(--secondary-text-color)");
     // Check icon color
-    this._bindSimpleColor("esl-hex-check", "esl-cur-check", "check_color", "var(--primary-color)");
+    this._bindColorPicker("esl-cp-check", "esl-hex-check", "esl-cur-check", "check_color", "var(--primary-color)");
 
     // Category checkboxes
     this.querySelector("#esl-chk-cat").addEventListener("change", e => {
@@ -2433,37 +2451,23 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     inp.addEventListener("blur", () => doRename());
   }
 
-  _bindSimpleColor(hexId, previewId, configKey, defaultCss) {
-    const hexInput = this.querySelector(`#${hexId}`);
-    const preview = this.querySelector(`#${previewId}`);
-    hexInput.addEventListener("change", () => {
-      let v = hexInput.value.trim().toLowerCase();
-      if (v === "auto" || v === "") {
-        this._config = { ...this._config, [configKey]: "" }; this._fire();
-        preview.style.background = defaultCss;
-        hexInput.value = "auto";
-        return;
-      }
-      if (!v.startsWith("#")) v = "#" + v;
-      if (/^#[0-9a-fA-F]{6}$/.test(v)) {
-        this._config = { ...this._config, [configKey]: v }; this._fire();
-        preview.style.background = v;
-        hexInput.value = v;
-      }
-    });
-    hexInput.addEventListener("keydown", e => { if (e.key === "Enter") hexInput.blur(); });
-  }
-
-  _bindColorPicker(sectionId, hexId, previewId, configKey) {
+  _bindColorPicker(sectionId, hexId, previewId, configKey, defaultCss) {
     const section = this.querySelector(`#${sectionId}`);
     const hexInput = this.querySelector(`#${hexId}`);
     const preview = this.querySelector(`#${previewId}`);
 
     const setColor = (color) => {
       this._config = { ...this._config, [configKey]: color }; this._fire();
-      const isNone = color === "none";
-      preview.style.background = isNone ? "var(--card-background-color,#fff)" : color;
-      hexInput.value = color;
+      if (color === "none") {
+        preview.style.background = "var(--card-background-color,#fff)";
+        hexInput.value = "none";
+      } else if (!color || color === "") {
+        preview.style.background = defaultCss || "var(--primary-text-color)";
+        hexInput.value = "auto";
+      } else {
+        preview.style.background = color;
+        hexInput.value = color;
+      }
       section.querySelectorAll(".color-swatch").forEach(s => {
         s.classList.toggle("active", s.dataset.color === color);
       });
@@ -2475,6 +2479,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
 
     hexInput.addEventListener("change", () => {
       let v = hexInput.value.trim().toLowerCase();
+      if (v === "auto" || v === "") { setColor(""); return; }
       if (v === "none") { setColor("none"); return; }
       if (!v.startsWith("#")) v = "#" + v;
       if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(v);
@@ -2504,7 +2509,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.13.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.13.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
