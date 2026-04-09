@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.10.4
+ * Enhanced Shopping List Card v2.11.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -73,6 +73,8 @@ const STRINGS = {
     store_mode: "W sklepie",
     store_mode_exit: "Wyjdź",
     store_done: "Wszystko kupione!",
+    store_undo: "Cofnij",
+    store_progress: "kupione",
     to_buy: "Do kupienia",
     bought: "Kupione",
     clear_bought: "Wyczyść kupione",
@@ -130,6 +132,8 @@ const STRINGS = {
     store_mode: "In store",
     store_mode_exit: "Exit",
     store_done: "All done!",
+    store_undo: "Undo",
+    store_progress: "done",
     to_buy: "To buy",
     bought: "Bought",
     clear_bought: "Clear bought",
@@ -634,22 +638,43 @@ class EnhancedShoppingListCard extends HTMLElement {
   /* ---------- store mode ---------- */
 
   _enterStoreMode() {
+    // Track totals for progress bar
+    if (this._storeTotalItems == null) {
+      this._storeTotalItems = this._items.filter(i => i.status === "needs_action").length;
+    }
     const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
+    const total = this._storeTotalItems;
+    const done = total - active.length;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
     const overlay = document.createElement("div");
     overlay.className = "store-overlay";
     const catEnabled = this._getViewPref("show_categories");
     const showHeaders = this._getViewPref("show_category_headers");
     const showBadge = this._getViewPref("show_category_badge");
 
+    // Count items per category for headers
+    const catCounts = {};
+    if (catEnabled && showHeaders) {
+      for (const item of active) {
+        const c = item.category || "";
+        catCounts[c] = (catCounts[c] || 0) + 1;
+      }
+    }
+
     let listHtml = "";
     if (!active.length) {
-      listHtml = `<div class="store-done">${this._t("store_done")}</div>`;
+      listHtml = `<div class="store-done">
+        <svg viewBox="0 0 24 24" width="64" height="64"><path d="M5 13l4 4L19 7" fill="none" stroke="#4caf50" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div>${this._t("store_done")}</div>
+      </div>`;
     } else {
       let lastCat = null;
       for (const item of active) {
         if (catEnabled && showHeaders && item.category !== lastCat) {
           const catLabel = item.category || this._t("other");
-          listHtml += `<div class="store-cat-header"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg> ${esc(catLabel)}</div>`;
+          const count = catCounts[item.category || ""] || 0;
+          listHtml += `<div class="store-cat-header"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg> ${esc(catLabel)} <span class="store-cat-count">(${count})</span></div>`;
           lastCat = item.category;
         }
         const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
@@ -674,17 +699,33 @@ class EnhancedShoppingListCard extends HTMLElement {
         <span class="store-counter">${active.length}</span>
         <button class="store-exit">${this._t("store_mode_exit")}</button>
       </div>
-      <div class="store-list">${listHtml}</div>`;
+      <div class="store-progress-bar">
+        <div class="store-progress-fill" style="width:${pct}%"></div>
+        <span class="store-progress-text">${done}/${total} ${this._t("store_progress")} (${pct}%)</span>
+      </div>
+      <div class="store-list">${listHtml}</div>
+      <div class="store-undo-toast" style="display:none">
+        <span class="store-undo-text"></span>
+        <button class="store-undo-btn">${this._t("store_undo")}</button>
+      </div>`;
 
     this.shadowRoot.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add("store-open"));
 
     overlay.querySelector(".store-exit").addEventListener("click", () => this._exitStoreMode());
 
+    // Auto-exit when all done
+    if (!active.length && total > 0) {
+      setTimeout(() => this._exitStoreMode(), 3500);
+    }
+
+    this._bindStoreSwipe(overlay);
+  }
+
+  _bindStoreSwipe(overlay) {
     overlay.querySelectorAll(".store-item").forEach(el => {
       const wrap = el.closest(".store-item-wrap");
       const fill = wrap.querySelector(".store-sw-fill");
-      const threshold = wrap.querySelector(".store-sw-threshold");
       let ts = null, off = 0;
       el.addEventListener("pointerdown", e => {
         if (e.button !== 0) return;
@@ -731,10 +772,9 @@ class EnhancedShoppingListCard extends HTMLElement {
           fill.style.width = "100%";
           const item = this._items.find(i => i.uid === el.dataset.uid);
           if (item) {
-            setTimeout(async () => {
-              await this._toggleComplete(item);
-              this._refreshStoreMode();
-            }, 300);
+            // Haptic feedback
+            try { navigator.vibrate(50); } catch(_) {}
+            this._storeCompleteItem(item);
           }
         } else {
           el.style.transform = "";
@@ -749,6 +789,36 @@ class EnhancedShoppingListCard extends HTMLElement {
     });
   }
 
+  async _storeCompleteItem(item) {
+    await this._toggleComplete(item);
+    // Show undo toast
+    this._showStoreUndo(item);
+    this._refreshStoreMode();
+  }
+
+  _showStoreUndo(item) {
+    const overlay = this.shadowRoot.querySelector(".store-overlay");
+    if (!overlay) return;
+    const toast = overlay.querySelector(".store-undo-toast");
+    if (!toast) return;
+    clearTimeout(this._storeUndoTimer);
+    toast.querySelector(".store-undo-text").textContent = `✓ ${item.name}`;
+    toast.style.display = "flex";
+    const btn = toast.querySelector(".store-undo-btn");
+    const newBtn = btn.cloneNode(true); btn.replaceWith(newBtn);
+    newBtn.addEventListener("click", async () => {
+      toast.style.display = "none";
+      clearTimeout(this._storeUndoTimer);
+      // Find the completed item and revert
+      const completed = this._items.find(i => i.uid === item.uid && i.status === "completed");
+      if (completed) {
+        await this._toggleComplete(completed);
+        this._refreshStoreMode();
+      }
+    });
+    this._storeUndoTimer = setTimeout(() => { toast.style.display = "none"; }, 4000);
+  }
+
   _refreshStoreMode() {
     const overlay = this.shadowRoot.querySelector(".store-overlay");
     if (!overlay) return;
@@ -760,6 +830,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     const overlay = this.shadowRoot.querySelector(".store-overlay");
     if (!overlay) return;
     overlay.classList.remove("store-open");
+    this._storeTotalItems = null;
+    clearTimeout(this._storeUndoTimer);
     setTimeout(() => overlay.remove(), 250);
   }
 
@@ -1682,6 +1754,21 @@ class EnhancedShoppingListCard extends HTMLElement {
         font-weight: 600; cursor: pointer; transition: all .15s;
       }
       .store-exit:hover { border-color: var(--primary-color); color: var(--primary-color); }
+      .store-progress-bar {
+        position: relative; height: 28px; margin: 0 20px 8px;
+        background: rgba(127,127,127,.15); border-radius: 14px; overflow: hidden;
+        flex-shrink: 0;
+      }
+      .store-progress-fill {
+        position: absolute; top: 0; left: 0; bottom: 0;
+        background: linear-gradient(90deg, #4caf50, #66bb6a);
+        border-radius: 14px; transition: width .5s ease;
+      }
+      .store-progress-text {
+        position: absolute; inset: 0; display: flex; align-items: center;
+        justify-content: center; font-size: 13px; font-weight: 700;
+        color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.4);
+      }
       .store-list {
         flex: 1; overflow-y: auto; padding: 8px 12px;
         -webkit-overflow-scrolling: touch;
@@ -1692,6 +1779,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         text-transform: uppercase; letter-spacing: .6px;
         color: var(--secondary-text-color); opacity: .8;
       }
+      .store-cat-count { font-weight: 400; opacity: .7; }
       .store-item-wrap {
         position: relative; margin: 6px 0; border-radius: 14px; overflow: hidden;
       }
@@ -1747,8 +1835,36 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .store-done {
         text-align: center; padding: 60px 20px;
-        font-size: 24px; font-weight: 600; opacity: .6;
+        font-size: 24px; font-weight: 600; opacity: .8;
+        display: flex; flex-direction: column; align-items: center; gap: 16px;
       }
+      .store-done svg {
+        animation: store-done-pop .5s ease;
+      }
+      @keyframes store-done-pop {
+        0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); }
+      }
+      .store-undo-toast {
+        position: absolute; bottom: 24px; left: 20px; right: 20px;
+        display: flex; align-items: center; gap: 12px;
+        padding: 14px 18px; border-radius: 14px;
+        background: var(--card-background-color, #333);
+        box-shadow: 0 6px 24px rgba(0,0,0,.4);
+        font-size: 16px; font-weight: 500;
+        animation: store-toast-in .25s ease;
+      }
+      @keyframes store-toast-in {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .store-undo-text { flex: 1; color: var(--primary-text-color); }
+      .store-undo-btn {
+        padding: 8px 20px; border-radius: 10px; border: none;
+        background: var(--primary-color); color: #fff;
+        font-size: 15px; font-weight: 700; cursor: pointer;
+        transition: opacity .15s;
+      }
+      .store-undo-btn:hover { opacity: .85; }
     `;
   }
 }
@@ -2191,7 +2307,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.10.4 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.11.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
