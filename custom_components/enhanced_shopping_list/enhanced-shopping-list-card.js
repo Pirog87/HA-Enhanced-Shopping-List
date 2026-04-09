@@ -1014,7 +1014,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     const scored = this._items.map(i => ({ i, s: fuzzyScore(q, i.name) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
     const seen = new Set(), uniq = [];
     for (const x of scored) { const k = stripDiacritics(x.i.name.toLowerCase()); if (!seen.has(k)) { seen.add(k); uniq.push(x); } }
-    this._suggestions = uniq.slice(0, 5);
+    this._suggestions = uniq.slice(0, 7);
     if (!this._suggestions.length) { box.style.display = "none"; return; }
     box.style.display = "";
     box.innerHTML = this._suggestions.map(x => {
@@ -1086,18 +1086,20 @@ class EnhancedShoppingListCard extends HTMLElement {
       /* --- suggestions --- */
       .suggestions {
         position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
-        background: var(--card-background-color,#fff);
-        border: 1px solid var(--divider-color,#ddd); border-top: none;
+        background: var(--secondary-background-color, #f5f5f5);
+        border: 2px solid var(--primary-color); border-top: none;
         border-radius: 0 0 var(--R) var(--R);
-        box-shadow: 0 6px 16px rgba(0,0,0,.12); overflow: hidden;
+        box-shadow: 0 8px 24px rgba(0,0,0,.25); overflow: hidden;
       }
       .sg-item {
         padding: 16px 16px; cursor: pointer; display: flex; align-items: center; gap: 12px;
         font-size: 19px; transition: background .12s; min-height: 56px; box-sizing: border-box;
+        border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
       }
-      .sg-item:hover { background: var(--secondary-background-color,#f5f5f5); }
+      .sg-item:last-child { border-bottom: none; }
+      .sg-item:hover, .sg-item:active { background: rgba(var(--esl-active-rgb), 0.18); }
       .sg-check { flex-shrink: 0; opacity: 0.85; }
-      .sg-name { flex: 1; }
+      .sg-name { flex: 1; font-weight: 500; }
       .sg-badge {
         font-size: 11px; padding: 2px 8px; border-radius: 10px;
         background: var(--primary-color); color: #fff; white-space: nowrap;
