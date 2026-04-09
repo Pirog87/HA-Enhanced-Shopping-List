@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.12.1
+ * Enhanced Shopping List Card v2.12.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -119,7 +119,9 @@ const STRINGS = {
     ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
     ed_item_size: "Rozmiar pozycji",
     ed_swipe_threshold: "Próg swipe (% szerokości)",
-    ed_store_size: "Rozmiar pozycji w trybie sklepu",
+    ed_section_standard: "Widok standardowy",
+    ed_section_store: "Tryb „W sklepie"",
+    ed_store_size: "Rozmiar pozycji",
     ed_size_compact: "Kompaktowy",
     ed_size_normal: "Normalny",
     ed_size_comfortable: "Wygodny",
@@ -180,7 +182,9 @@ const STRINGS = {
     ed_show_notes: "Show note icon on items",
     ed_item_size: "Item size",
     ed_swipe_threshold: "Swipe threshold (% of width)",
-    ed_store_size: "Item size in store mode",
+    ed_section_standard: "Standard view",
+    ed_section_store: "\"In store\" mode",
+    ed_store_size: "Item size",
     ed_size_compact: "Compact",
     ed_size_normal: "Normal",
     ed_size_comfortable: "Comfortable",
@@ -2000,6 +2004,11 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           font-family: inherit; font-size: 14px;
         }
         .esl-ed .sep { border: none; border-top: 1px solid var(--divider-color,#ddd); margin: 16px 0 12px; }
+        .ed-section-header {
+          font-size: 13px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: .8px; color: var(--primary-color);
+          padding: 4px 0 8px; margin-top: 2px;
+        }
         /* --- swatch color picker --- */
         .color-section { margin-top: 4px; }
         .color-swatches {
@@ -2173,6 +2182,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
           </div>
         </div>
         <hr class="sep"/>
+        <div class="ed-section-header">${this._t("ed_section_standard")}</div>
         <div class="row">
           <label>${this._t("ed_view")}</label>
           <div class="check-row" id="esl-chk-notes-row">
@@ -2197,13 +2207,8 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             </button>
           </div>
         </div>
-        <div class="row">
-          <label>${this._t("ed_swipe_threshold")}</label>
-          <div class="threshold-row">
-            <input type="range" id="esl-swipe-threshold" min="15" max="85" step="5" value="${this._config.swipe_threshold || 50}" />
-            <span class="threshold-val" id="esl-threshold-val">${this._config.swipe_threshold || 50}%</span>
-          </div>
-        </div>
+        <hr class="sep"/>
+        <div class="ed-section-header">${this._t("ed_section_store")}</div>
         <div class="row">
           <label>${this._t("ed_store_size")}</label>
           <div class="size-picker" id="esl-store-size-picker">
@@ -2219,6 +2224,13 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
               <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="3" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="10" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="17" width="18" height="4" rx="1.5" fill="currentColor"/></svg>
               <span>${this._t("ed_size_comfortable")}</span>
             </button>
+          </div>
+        </div>
+        <div class="row">
+          <label>${this._t("ed_swipe_threshold")}</label>
+          <div class="threshold-row">
+            <input type="range" id="esl-swipe-threshold" min="15" max="85" step="5" value="${this._config.swipe_threshold || 50}" />
+            <span class="threshold-val" id="esl-threshold-val">${this._config.swipe_threshold || 50}%</span>
           </div>
         </div>
       </div>`;
@@ -2425,7 +2437,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.12.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.12.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
