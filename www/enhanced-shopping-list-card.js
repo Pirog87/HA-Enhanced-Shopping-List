@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.11.5
+ * Enhanced Shopping List Card v2.12.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -118,6 +118,7 @@ const STRINGS = {
     ed_view: "Widok",
     ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
     ed_item_size: "Rozmiar pozycji",
+    ed_swipe_threshold: "Próg swipe (% szerokości)",
     ed_size_compact: "Kompaktowy",
     ed_size_normal: "Normalny",
     ed_size_comfortable: "Wygodny",
@@ -177,6 +178,7 @@ const STRINGS = {
     ed_view: "View",
     ed_show_notes: "Show note icon on items",
     ed_item_size: "Item size",
+    ed_swipe_threshold: "Swipe threshold (% of width)",
     ed_size_compact: "Compact",
     ed_size_normal: "Normal",
     ed_size_comfortable: "Comfortable",
@@ -252,6 +254,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   get hass() { return this._hass; }
   _t(key) { return getStrings(this._hass?.language)[key] || key; }
+  _swipeThreshold() { return Math.max(10, Math.min(90, parseInt(this._config.swipe_threshold) || 50)) / 100; }
 
   _scheduleRetry() {
     if (this._retryCount >= 5) {
@@ -683,7 +686,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         listHtml += `<div class="store-item-wrap">
           <div class="store-sw-bg">
             <div class="store-sw-fill"></div>
-            <div class="store-sw-threshold"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M5 13l4 4L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div class="store-sw-threshold" style="left:${parseInt(this._config.swipe_threshold) || 50}%"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M5 13l4 4L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           </div>
           <div class="store-item" data-uid="${item.uid}">
             <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -751,7 +754,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           el.style.transition = "none";
           el.style.transform = `translate3d(${off}px,0,0)`;
           fill.style.width = `${off}px`;
-          if (pct >= 0.5) {
+          if (pct >= this._swipeThreshold()) {
             wrap.classList.add("store-sw-ready");
           } else {
             wrap.classList.remove("store-sw-ready");
@@ -764,9 +767,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       };
       const endSwipe = () => {
         if (!ts) return;
-        const halfWidth = el.offsetWidth * 0.5;
+        const swThresh = el.offsetWidth * this._swipeThreshold();
         el.style.transition = "all 0.3s ease";
-        if (off > halfWidth) {
+        if (off > swThresh) {
           el.style.transform = `translate3d(${el.offsetWidth}px,0,0)`;
           fill.style.transition = "width 0.3s ease";
           fill.style.width = "100%";
@@ -961,7 +964,10 @@ class EnhancedShoppingListCard extends HTMLElement {
     return `
     <div class="item-wrap" data-uid="${item.uid}">
       <div class="swipe-row">
-        <div class="sw-bg sw-right"><svg viewBox="0 0 24 24" width="22" height="22"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div class="sw-bg sw-right">
+          <svg viewBox="0 0 24 24" width="22" height="22"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="sw-threshold-line" style="left:${parseInt(this._config.swipe_threshold) || 50}%"></div>
+        </div>
         <div class="sw-bg sw-left" data-action="swipe-delete"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
         <div class="item" data-uid="${item.uid}">
           <div class="chk" data-action="toggle"><div class="chk-inner"></div></div>
@@ -1126,7 +1132,12 @@ class EnhancedShoppingListCard extends HTMLElement {
         if (ts.dir === "h") {
           off = isCompleted ? Math.min(0, dx) : dx;
           if (off > 0) {
-            swipeRow.className = "swipe-row swiping-right";
+            const pct = off / itemEl.offsetWidth;
+            const th = this._swipeThreshold();
+            const ready = pct >= th;
+            swipeRow.className = "swipe-row swiping-right" + (ready ? " sw-ready" : "");
+            const swRight = swipeRow.querySelector(".sw-right");
+            if (swRight) swRight.style.background = ready ? "#43a047" : "#ff9800";
           } else if (off < 0) {
             swipeRow.className = "swipe-row swiping-left";
           }
@@ -1135,25 +1146,29 @@ class EnhancedShoppingListCard extends HTMLElement {
         }
       });
 
+      const resetSwBg = () => {
+        const swRight = swipeRow.querySelector(".sw-right");
+        if (swRight) swRight.style.background = "";
+      };
       const endSwipe = () => {
         if (!ts) return;
-        const halfWidth = itemEl.offsetWidth * 0.5;
+        const swThresh = itemEl.offsetWidth * this._swipeThreshold();
         itemEl.style.transition = "transform 0.25s ease";
-        if (off > halfWidth && !isCompleted) {
+        if (off > swThresh && !isCompleted) {
           // Right swipe: complete
           itemEl.style.transform = "";
-          swipeRow.className = "swipe-row";
+          swipeRow.className = "swipe-row"; resetSwBg();
           this._toggleComplete(item);
-        } else if (off < -halfWidth) {
+        } else if (off < -swThresh) {
           // Left swipe: show delete confirmation
           ts = null;
           itemEl.style.transform = "";
-          swipeRow.className = "swipe-row";
+          swipeRow.className = "swipe-row"; resetSwBg();
           this._showDeleteConfirm(item, el, itemEl, swipeRow);
           return;
         } else {
           itemEl.style.transform = "";
-          setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
+          setTimeout(() => { swipeRow.className = "swipe-row"; resetSwBg(); }, 250);
         }
         ts = null;
       };
@@ -1161,7 +1176,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       itemEl.addEventListener("pointercancel", () => {
         if (ts) {
           itemEl.style.transition = "transform 0.25s ease"; itemEl.style.transform = "";
-          setTimeout(() => { swipeRow.className = "swipe-row"; }, 250);
+          setTimeout(() => { swipeRow.className = "swipe-row"; resetSwBg(); }, 250);
           ts = null;
         }
       });
@@ -1476,7 +1491,16 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .swipe-row.swiping-right .sw-right { opacity: 1; }
       .swipe-row.swiping-left .sw-left { opacity: 1; }
-      .sw-right { left: 0; background: #43a047; padding-left: 18px; }
+      .sw-right { left: 0; background: #ff9800; padding-left: 18px; transition: background .15s; }
+      .sw-ready .sw-right { background: #43a047; }
+      .sw-threshold-line {
+        position: absolute; top: 4px; bottom: 4px;
+        border-left: 2px dashed rgba(255,255,255,.5);
+        transform: translateX(-1px);
+      }
+      .sw-ready .sw-threshold-line {
+        border-left-color: rgba(255,255,255,.9);
+      }
       .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; cursor: pointer; }
       .item {
         position: relative; display: flex; align-items: center; gap: 8px;
@@ -1771,7 +1795,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .store-progress-text {
         position: absolute; inset: 0; display: flex; align-items: center;
         justify-content: center; font-size: 13px; font-weight: 700;
-        color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.6);
+        color: var(--primary-text-color); text-shadow: 0 0 4px var(--primary-background-color, #000), 0 0 4px var(--primary-background-color, #000);
       }
       .store-list {
         flex: 1; overflow-y: auto; padding: 8px 12px;
@@ -1801,7 +1825,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: rgba(76, 175, 80, 0.55);
       }
       .store-sw-threshold {
-        position: absolute; top: 0; bottom: 0; left: 50%;
+        position: absolute; top: 0; bottom: 0;
         transform: translateX(-50%);
         display: flex; align-items: center; justify-content: center;
         opacity: 0.3;
@@ -2001,6 +2025,9 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         .cat-order-btn:disabled { opacity: .2; cursor: default; }
         .cat-order-btn:disabled:hover { background: none; }
         /* --- size picker --- */
+        .threshold-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+        .threshold-row input[type="range"] { flex: 1; accent-color: var(--primary-color); }
+        .threshold-val { font-weight: 700; font-size: 14px; min-width: 36px; text-align: center; }
         .size-picker { display: flex; gap: 8px; margin-top: 4px; }
         .size-btn {
           flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -2126,6 +2153,13 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             </button>
           </div>
         </div>
+        <div class="row">
+          <label>${this._t("ed_swipe_threshold")}</label>
+          <div class="threshold-row">
+            <input type="range" id="esl-swipe-threshold" min="15" max="85" step="5" value="${this._config.swipe_threshold || 50}" />
+            <span class="threshold-val" id="esl-threshold-val">${this._config.swipe_threshold || 50}%</span>
+          </div>
+        </div>
       </div>`;
     this._populateEntities();
 
@@ -2175,6 +2209,16 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
         this.querySelectorAll("#esl-size-picker .size-btn").forEach(b => b.classList.remove("size-active"));
         btn.classList.add("size-active");
       });
+    });
+
+    // Swipe threshold
+    const thSlider = this.querySelector("#esl-swipe-threshold");
+    const thVal = this.querySelector("#esl-threshold-val");
+    thSlider.addEventListener("input", e => {
+      thVal.textContent = `${e.target.value}%`;
+    });
+    thSlider.addEventListener("change", e => {
+      this._config = { ...this._config, swipe_threshold: parseInt(e.target.value) }; this._fire();
     });
 
     // Category order
@@ -2311,7 +2355,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.11.5 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.12.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
