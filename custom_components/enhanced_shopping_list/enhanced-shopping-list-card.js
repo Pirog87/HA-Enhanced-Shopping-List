@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.10.2
+ * Enhanced Shopping List Card v2.10.3
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -655,9 +655,15 @@ class EnhancedShoppingListCard extends HTMLElement {
         const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
         const qtyBadge = item.quantity > 1 ? `<span class="store-qty">${item.quantity} ${this._t("pcs")}</span>` : "";
         const checkColor = this._config.check_color || "var(--primary-color)";
-        listHtml += `<div class="store-item" data-uid="${item.uid}">
-          <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span class="store-name">${esc(item.name)}</span>${catBadge}${qtyBadge}
+        listHtml += `<div class="store-item-wrap">
+          <div class="store-sw-bg">
+            <div class="store-sw-fill"></div>
+            <div class="store-sw-threshold"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M5 13l4 4L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>
+          <div class="store-item" data-uid="${item.uid}">
+            <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="store-name">${esc(item.name)}</span>${catBadge}${qtyBadge}
+          </div>
         </div>`;
       }
     }
@@ -676,11 +682,15 @@ class EnhancedShoppingListCard extends HTMLElement {
     overlay.querySelector(".store-exit").addEventListener("click", () => this._exitStoreMode());
 
     overlay.querySelectorAll(".store-item").forEach(el => {
+      const wrap = el.closest(".store-item-wrap");
+      const fill = wrap.querySelector(".store-sw-fill");
+      const threshold = wrap.querySelector(".store-sw-threshold");
       let ts = null, off = 0;
       el.addEventListener("pointerdown", e => {
         if (e.button !== 0) return;
         ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
         off = 0;
+        wrap.classList.add("store-swiping");
       });
       el.addEventListener("pointermove", e => {
         if (!ts || ts.id !== e.pointerId) return;
@@ -690,23 +700,35 @@ class EnhancedShoppingListCard extends HTMLElement {
             ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
             if (ts.dir === "h") {
               try { el.setPointerCapture(e.pointerId); } catch(_) {}
-            } else { ts = null; return; }
+            } else { ts = null; wrap.classList.remove("store-swiping"); return; }
           } else return;
         }
         if (ts.dir === "h") {
           off = Math.max(0, dx);
+          const w = el.offsetWidth;
+          const pct = Math.min(off / w, 1);
           el.style.transition = "none";
           el.style.transform = `translate3d(${off}px,0,0)`;
-          el.style.opacity = Math.max(0.3, 1 - off / el.offsetWidth);
+          fill.style.width = `${off}px`;
+          if (pct >= 0.5) {
+            wrap.classList.add("store-sw-ready");
+          } else {
+            wrap.classList.remove("store-sw-ready");
+          }
         }
       });
+      const resetSwipe = () => {
+        wrap.classList.remove("store-swiping", "store-sw-ready");
+        fill.style.width = "0";
+      };
       const endSwipe = () => {
         if (!ts) return;
         const halfWidth = el.offsetWidth * 0.5;
         el.style.transition = "all 0.3s ease";
         if (off > halfWidth) {
           el.style.transform = `translate3d(${el.offsetWidth}px,0,0)`;
-          el.style.opacity = "0";
+          fill.style.transition = "width 0.3s ease";
+          fill.style.width = "100%";
           const item = this._items.find(i => i.uid === el.dataset.uid);
           if (item) {
             setTimeout(async () => {
@@ -716,13 +738,13 @@ class EnhancedShoppingListCard extends HTMLElement {
           }
         } else {
           el.style.transform = "";
-          el.style.opacity = "";
+          resetSwipe();
         }
         ts = null;
       };
       el.addEventListener("pointerup", endSwipe);
       el.addEventListener("pointercancel", () => {
-        if (ts) { el.style.transition = "all 0.3s ease"; el.style.transform = ""; el.style.opacity = ""; ts = null; }
+        if (ts) { el.style.transition = "all 0.3s ease"; el.style.transform = ""; resetSwipe(); ts = null; }
       });
     });
   }
@@ -1670,9 +1692,40 @@ class EnhancedShoppingListCard extends HTMLElement {
         text-transform: uppercase; letter-spacing: .6px;
         color: var(--secondary-text-color); opacity: .8;
       }
+      .store-item-wrap {
+        position: relative; margin: 6px 0; border-radius: 14px; overflow: hidden;
+      }
+      .store-sw-bg {
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        border-radius: 14px; overflow: hidden; display: none;
+      }
+      .store-swiping .store-sw-bg { display: block; }
+      .store-sw-fill {
+        position: absolute; top: 0; left: 0; bottom: 0; width: 0;
+        background: rgba(76, 175, 80, 0.35);
+        transition: none;
+      }
+      .store-sw-ready .store-sw-fill {
+        background: rgba(76, 175, 80, 0.55);
+      }
+      .store-sw-threshold {
+        position: absolute; top: 0; bottom: 0; left: 50%;
+        transform: translateX(-50%);
+        display: flex; align-items: center; justify-content: center;
+        opacity: 0.3;
+        border-left: 2px dashed rgba(255,255,255,.4);
+        padding-left: 8px;
+      }
+      .store-sw-ready .store-sw-threshold {
+        opacity: 1;
+      }
+      .store-sw-ready .store-sw-threshold svg path {
+        stroke: #4caf50;
+      }
       .store-item {
+        position: relative;
         display: flex; align-items: center; gap: 16px;
-        padding: 18px 16px; margin: 6px 0; border-radius: 14px;
+        padding: 18px 16px; border-radius: 14px;
         background: var(--esl-active-bg);
         cursor: pointer; transition: all .3s ease;
         min-height: 64px; box-sizing: border-box;
@@ -2138,7 +2191,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.10.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.10.3 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
