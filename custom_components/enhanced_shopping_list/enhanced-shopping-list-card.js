@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.10.1
+ * Enhanced Shopping List Card v2.10.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -456,6 +456,9 @@ class EnhancedShoppingListCard extends HTMLElement {
         <div class="header">
           <span class="header-title">${esc(title)}</span>
           <div class="header-toggles">
+            <button class="hdr-toggle store-mode-btn" title="${this._t("store_mode")}">
+              <svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="1.5"/><path d="M16 10a4 4 0 01-8 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
             <button class="hdr-toggle${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" title="${this._t("toggle_group")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
@@ -467,9 +470,6 @@ class EnhancedShoppingListCard extends HTMLElement {
             </button>
             <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="${this._t("toggle_notes")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            </button>
-            <button class="hdr-toggle store-mode-btn" title="${this._t("store_mode")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="9,22 9,12 15,12 15,22" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
           </div>
         </div>
@@ -1260,6 +1260,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .hdr-toggle:hover { background: rgba(128,128,128,.12); opacity: .8; }
       .hdr-toggle.hdr-on { color: var(--primary-color); opacity: 1; }
+      .store-mode-btn { opacity: .7; padding: 5px; margin-right: 2px; }
+      .store-mode-btn:hover { opacity: 1; color: var(--primary-color); }
       .hdr-toggle-sm { padding: 4px; }
       .hdr-toggle-sm svg { width: 14px; height: 14px; }
       .done-toggles { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
@@ -2136,7 +2138,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.10.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.10.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
