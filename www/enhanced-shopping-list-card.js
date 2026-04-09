@@ -188,12 +188,20 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._qtyTimers = {};
     this._hass = null;
     this._rendered = false;
+    this._retryCount = 0;
     this._viewPrefs = {};
   }
 
   setConfig(config) {
     this._config = config;
-    if (this._rendered) { this._render(); if (config.entity) this._fetchItems(); }
+    if (this._rendered) {
+      try {
+        this._render();
+        if (config.entity) this._fetchItems();
+      } catch (e) {
+        console.error("ESL: render after config change failed", e);
+      }
+    }
   }
 
   getCardSize() { return 3; }
@@ -207,8 +215,13 @@ class EnhancedShoppingListCard extends HTMLElement {
     const oldHass = this._hass;
     this._hass = hass;
     if (!this._rendered) {
-      this._render(); this._rendered = true;
-      if (this._config.entity) this._fetchItems();
+      try {
+        this._render(); this._rendered = true;
+        if (this._config.entity) this._fetchItems();
+      } catch (e) {
+        console.error("ESL: initial render failed, will retry", e);
+        this._scheduleRetry();
+      }
       return;
     }
     const entity = this._config.entity;
@@ -220,6 +233,26 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   get hass() { return this._hass; }
   _t(key) { return getStrings(this._hass?.language)[key] || key; }
+
+  _scheduleRetry() {
+    if (this._retryCount >= 5) {
+      console.error("ESL: render failed after 5 retries");
+      return;
+    }
+    this._retryCount = (this._retryCount || 0) + 1;
+    const delay = this._retryCount * 2000;
+    setTimeout(() => {
+      if (this._rendered) return;
+      try {
+        this._render(); this._rendered = true;
+        if (this._config.entity) this._fetchItems();
+        console.info("ESL: render succeeded on retry", this._retryCount);
+      } catch (e) {
+        console.warn("ESL: render retry failed", this._retryCount, e);
+        this._scheduleRetry();
+      }
+    }, delay);
+  }
 
   /* ---------- data ---------- */
 
