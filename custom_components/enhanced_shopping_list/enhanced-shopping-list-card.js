@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.11.0
+ * Enhanced Shopping List Card v2.11.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -1781,7 +1781,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .store-cat-count { font-weight: 400; opacity: .7; }
       .store-item-wrap {
-        position: relative; margin: 6px 0; border-radius: 14px; overflow: hidden;
+        position: relative; margin: 4px 0; border-radius: 14px; overflow: hidden;
       }
       .store-sw-bg {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -1813,10 +1813,10 @@ class EnhancedShoppingListCard extends HTMLElement {
       .store-item {
         position: relative;
         display: flex; align-items: center; gap: 16px;
-        padding: 18px 16px; border-radius: 14px;
+        padding: 12px 16px; border-radius: 14px;
         background: var(--esl-active-bg);
         cursor: pointer; transition: all .3s ease;
-        min-height: 64px; box-sizing: border-box;
+        min-height: 48px; box-sizing: border-box;
         user-select: none; -webkit-user-select: none;
         border: 1.5px solid transparent;
         touch-action: pan-y;
@@ -2307,7 +2307,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.11.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.11.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
