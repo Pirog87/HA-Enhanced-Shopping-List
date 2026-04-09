@@ -102,6 +102,7 @@ const STRINGS = {
     ed_color_none: "Brak (motyw)",
     ed_text_color: "Kolor tekstu",
     ed_icon_color: "Kolor ikon (tag, notatka)",
+    ed_check_color: "Kolor znacznika ✓ (podpowiedzi)",
     ed_categories: "Kategorie",
     ed_group_sort: "Grupuj i sortuj po kategoriach",
     ed_show_badge: "Pokazuj nazwę kategorii na pozycji",
@@ -154,6 +155,7 @@ const STRINGS = {
     ed_color_none: "None (theme)",
     ed_text_color: "Text color",
     ed_icon_color: "Icon color (tag, note)",
+    ed_check_color: "Check icon color (suggestions)",
     ed_categories: "Categories",
     ed_group_sort: "Group and sort by categories",
     ed_show_badge: "Show category name on items",
@@ -1021,7 +1023,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       const on = x.i.status === "needs_action";
       const badge = on ? `<span class="sg-badge">${x.i.quantity} ${this._t("pcs")}</span>` : `<span class="sg-badge sg-done">${this._t("bought").toLowerCase()}</span>`;
       const catInfo = x.i.category ? `<span class="sg-cat">${esc(x.i.category)}</span>` : "";
-      const checkIcon = `<svg class="sg-check" viewBox="0 0 24 24" width="20" height="20"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" fill="var(--primary-color)"/></svg>`;
+      const checkColor = this._config.check_color || "var(--primary-color)";
+      const checkIcon = `<svg class="sg-check" viewBox="0 0 24 24" width="22" height="22"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       return `<div class="sg-item" data-uid="${x.i.uid}">${checkIcon}<span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
     }).join("");
     box.querySelectorAll(".sg-item").forEach(el => {
@@ -1448,6 +1451,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     const doneColor = this._config.color_completed || "#4caf50";
     const textColor = this._config.text_color || "";
     const iconColor = this._config.icon_color || "";
+    const checkColor = this._config.check_color || "";
     const showCat = this._config.show_categories !== false;
     const showBadge = this._config.show_category_badge !== false;
     const showHeaders = this._config.show_category_headers !== false;
@@ -1608,6 +1612,13 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <input class="color-hex-input" id="esl-hex-icon" type="text" value="${iconColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
           </div>
         </div>
+        <div class="row">
+          <label>${this._t("ed_check_color")}</label>
+          <div class="color-hex-row">
+            <div class="color-current" id="esl-cur-check" style="background:${checkColor || 'var(--primary-color)'}"></div>
+            <input class="color-hex-input" id="esl-hex-check" type="text" value="${checkColor || this._t("ed_auto")}" placeholder="${this._t("ed_auto_placeholder")}" />
+          </div>
+        </div>
         <hr class="sep"/>
         <div class="row">
           <label>${this._t("ed_categories")}</label>
@@ -1670,6 +1681,8 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     this._bindSimpleColor("esl-hex-text", "esl-cur-text", "text_color", "var(--primary-text-color)");
     // Icon color
     this._bindSimpleColor("esl-hex-icon", "esl-cur-icon", "icon_color", "var(--secondary-text-color)");
+    // Check icon color
+    this._bindSimpleColor("esl-hex-check", "esl-cur-check", "check_color", "var(--primary-color)");
 
     // Category checkboxes
     this.querySelector("#esl-chk-cat").addEventListener("change", e => {
