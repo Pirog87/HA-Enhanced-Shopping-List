@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.13.2
+ * Enhanced Shopping List Card v2.13.3
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -121,7 +121,7 @@ const STRINGS = {
     ed_item_size: "Rozmiar pozycji",
     ed_swipe_threshold: "Próg swipe (% szerokości)",
     ed_section_standard: "Widok standardowy",
-    ed_section_store: "Tryb „W sklepie"",
+    ed_section_store: "Tryb 'W sklepie'",
     ed_store_size: "Rozmiar pozycji",
     ed_size_compact: "Kompaktowy",
     ed_size_normal: "Normalny",
@@ -2509,7 +2509,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.13.2 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.13.3 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
