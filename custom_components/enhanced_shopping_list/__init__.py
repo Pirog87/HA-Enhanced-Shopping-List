@@ -11,9 +11,8 @@ import logging
 import time
 from pathlib import Path
 
-from aiohttp import web
 from homeassistant.components.frontend import add_extra_js_url, remove_extra_js_url
-from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
@@ -37,30 +36,6 @@ VERSION = _MANIFEST.get("version", "0.0.0")
 
 # JS file path
 _JS_PATH = Path(__file__).parent / CARD_FILENAME
-
-
-class ESLCardView(HomeAssistantView):
-    """Serve the JS card file with no-cache headers."""
-
-    url = CARD_URL
-    name = "esl_card_js"
-    requires_auth = False
-
-    async def get(self, request: web.Request) -> web.Response:
-        """Serve JS with explicit no-cache headers."""
-        try:
-            content = _JS_PATH.read_bytes()
-        except FileNotFoundError:
-            return web.Response(status=404)
-        return web.Response(
-            body=content,
-            content_type="application/javascript; charset=utf-8",
-            headers={
-                "Cache-Control": "no-cache, no-store, must-revalidate",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-        )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -124,14 +99,17 @@ async def _async_register_frontend(hass: HomeAssistant, setup_ts: str) -> None:
     # Store URL so async_unload_entry can remove it on reload
     hass.data[DOMAIN]["js_url"] = url_with_cache_buster
 
-    # Step 1: Register HTTP view that serves JS with no-cache headers.
-    # The view prevents browser caching entirely, ensuring updates are
-    # always picked up after integration reload without manual cache clear.
+    # Step 1: Register static HTTP path so HA serves the JS file
     try:
-        hass.http.register_view(ESLCardView())
-    except Exception:
-        # View may already be registered from a previous load
-        _LOGGER.debug("JS view already registered: %s", CARD_URL)
+        await hass.http.async_register_static_paths([
+            StaticPathConfig(
+                url_path=URL_BASE,
+                path=str(Path(__file__).parent),
+                cache_headers=False,
+            )
+        ])
+    except RuntimeError:
+        _LOGGER.debug("Static path already registered: %s", URL_BASE)
 
     # Step 2: Inject as extra JS (loads on every page, all Lovelace modes)
     add_extra_js_url(hass, url_with_cache_buster)
