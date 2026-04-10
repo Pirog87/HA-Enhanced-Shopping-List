@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.13.5
+ * Enhanced Shopping List Card v2.13.6
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -709,9 +709,9 @@ class EnhancedShoppingListCard extends HTMLElement {
       <div class="store-header">
         <span class="store-title">${this._t("store_mode")}</span>
         <div class="store-size-picker">
-          <button class="store-size-btn${storeSize === "compact" ? " store-size-active" : ""}" data-sz="compact">${this._t("ed_size_compact")}</button>
-          <button class="store-size-btn${storeSize === "normal" ? " store-size-active" : ""}" data-sz="normal">${this._t("ed_size_normal")}</button>
-          <button class="store-size-btn${storeSize === "comfortable" ? " store-size-active" : ""}" data-sz="comfortable">${this._t("ed_size_comfortable")}</button>
+          <button class="store-size-btn${storeSize === "compact" ? " store-size-active" : ""}" data-sz="compact"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="5" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="10.75" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="16.5" width="18" height="2.5" rx="1" fill="currentColor"/></svg></button>
+          <button class="store-size-btn${storeSize === "normal" ? " store-size-active" : ""}" data-sz="normal"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="10.5" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="17" width="18" height="3" rx="1" fill="currentColor"/></svg></button>
+          <button class="store-size-btn${storeSize === "comfortable" ? " store-size-active" : ""}" data-sz="comfortable"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="10" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="17" width="18" height="4" rx="1.5" fill="currentColor"/></svg></button>
         </div>
         <span class="store-counter">${active.length}</span>
         <button class="store-exit">${this._t("store_mode_exit")}</button>
@@ -1803,10 +1803,9 @@ class EnhancedShoppingListCard extends HTMLElement {
         border-radius: 8px; padding: 2px;
       }
       .store-size-btn {
-        padding: 5px 10px; border: none; border-radius: 6px; cursor: pointer;
-        font-size: 11px; font-weight: 600; background: transparent;
-        color: var(--secondary-text-color); transition: all .15s;
-        white-space: nowrap;
+        padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer;
+        background: transparent; color: var(--secondary-text-color);
+        transition: all .15s; display: flex; align-items: center;
       }
       .store-size-btn:hover { background: rgba(127,127,127,.15); }
       .store-size-active {
@@ -1867,7 +1866,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .store-swiping .store-sw-bg { display: block; }
       .store-sw-fill {
         position: absolute; top: 0; left: 0; bottom: 0; width: 0;
-        background: rgba(76, 175, 80, 0.35);
+        background: rgba(255, 152, 0, 0.4);
         transition: none;
       }
       .store-sw-ready .store-sw-fill {
@@ -2509,7 +2508,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.13.5 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.13.6 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
