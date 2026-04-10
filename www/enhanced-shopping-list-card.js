@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.13.4
+ * Enhanced Shopping List Card v2.13.5
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -2509,7 +2509,16 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.13.4 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.13.5 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
+
+// Auto-recover from race condition on hard refresh:
+// If the card rendered as "error" before this JS loaded,
+// trigger a Lovelace view re-render to pick up the now-defined element.
+setTimeout(() => {
+  if (customElements.get("enhanced-shopping-list-card")) {
+    window.dispatchEvent(new CustomEvent("location-changed"));
+  }
+}, 1000);
