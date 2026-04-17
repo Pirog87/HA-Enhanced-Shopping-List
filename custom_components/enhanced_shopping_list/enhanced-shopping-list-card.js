@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.14.0
+ * Enhanced Shopping List Card v2.15.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -10,27 +10,34 @@
 
 function parseSummary(summary) {
   const s = (summary || "").trim();
-  let name = s, qty = 1, notes = "", category = "";
-  // 1. Extract notes after " // "
+  let name = s, qty = 1, unit = "", notes = "", category = "";
   const noteIdx = s.indexOf(" // ");
   if (noteIdx >= 0) {
     notes = s.substring(noteIdx + 4).trim();
     name = s.substring(0, noteIdx).trim();
   }
-  // 2. Extract category from [...]
   const catMatch = name.match(/^(.+?)\s*\[([^\]]+)\]$/);
   if (catMatch) {
     name = catMatch[1].trim();
     category = catMatch[2].trim();
   }
-  // 3. Extract quantity from (N)
-  const qm = name.match(/^(.+?)\s*\((\d+)\)$/);
-  if (qm) { name = qm[1].trim(); qty = parseInt(qm[2], 10); }
-  return { name, qty, notes, category };
+  const qm = name.match(/^(.+?)\s*\((\d+(?:[.,]\d+)?)\s*([a-zA-ZąćęłńóśźżĄĆĘŁŃÓŚŹŻ.]*)\)$/);
+  if (qm) {
+    name = qm[1].trim();
+    qty = parseFloat(qm[2].replace(",", "."));
+    unit = (qm[3] || "").trim();
+  }
+  return { name, qty, unit, notes, category };
 }
 
-function formatSummary(name, qty, notes, category) {
-  let s = qty > 1 ? `${name} (${qty})` : name;
+function formatSummary(name, qty, notes, category, unit) {
+  const u = unit || "";
+  let s;
+  if (qty !== 1 || u) {
+    s = u ? `${name} (${qty} ${u})` : `${name} (${qty})`;
+  } else {
+    s = name;
+  }
   if (category) s += ` [${category}]`;
   if (notes) s += ` // ${notes}`;
   return s;
@@ -291,8 +298,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     try {
       const res = await this._hass.callWS({ type: "todo/item/list", entity_id: this._config.entity });
       this._items = (res.items || []).map((it) => {
-        const { name, qty, notes, category } = parseSummary(it.summary);
-        return { uid: it.uid, name, quantity: qty, notes, category, status: it.status, summary: it.summary };
+        const { name, qty, unit, notes, category } = parseSummary(it.summary);
+        return { uid: it.uid, name, quantity: qty, unit: unit || "", notes, category, status: it.status, summary: it.summary };
       });
       this._updateLists();
     } catch (e) { console.error("ESL: fetch failed", e); }
@@ -305,14 +312,24 @@ class EnhancedShoppingListCard extends HTMLElement {
     } catch (e) { console.error(`ESL: todo.${service} error`, e); }
   }
 
-  async _addItem(name, qty = 1, notes = "", category = "") {
-    await this._callService("add_item", { item: formatSummary(name, qty, notes, category) });
+  async _addItem(name, qty = 1, notes = "", category = "", unit = "") {
+    await this._callService("add_item", { item: formatSummary(name, qty, notes, category, unit) });
     await this._fetchItems();
   }
 
   async _toggleComplete(item) {
     const s = item.status === "needs_action" ? "completed" : "needs_action";
-    await this._callService("update_item", { item: item.uid, status: s });
+    if (s === "completed" && (item.quantity !== 1 || item.unit)) {
+      const li = this._items.find(i => i.uid === item.uid);
+      const name = li ? li.name : item.name;
+      const notes = li ? li.notes : (item.notes || "");
+      const category = li ? li.category : (item.category || "");
+      await this._callService("update_item", {
+        item: item.uid, rename: formatSummary(name, 1, notes, category, ""), status: s,
+      });
+    } else {
+      await this._callService("update_item", { item: item.uid, status: s });
+    }
     await this._fetchItems();
   }
 
@@ -321,18 +338,19 @@ class EnhancedShoppingListCard extends HTMLElement {
     await this._fetchItems();
   }
 
-  _updateQuantity(item, newQty) {
-    const q = Math.max(1, newQty);
+  _updateQuantity(item, newQty, newUnit) {
+    const q = Math.max(0.1, newQty);
     const li = this._items.find(i => i.uid === item.uid);
     const name = li ? li.name : item.name;
     const notes = li ? li.notes : (item.notes || "");
     const category = li ? li.category : (item.category || "");
-    if (li) { li.quantity = q; li.summary = formatSummary(name, q, notes, category); }
+    const unit = newUnit !== undefined ? newUnit : (li ? li.unit : (item.unit || ""));
+    if (li) { li.quantity = q; li.unit = unit; li.summary = formatSummary(name, q, notes, category, unit); }
     this._updateLists();
     clearTimeout(this._qtyTimers[item.uid]);
     this._qtyTimers[item.uid] = setTimeout(async () => {
       delete this._qtyTimers[item.uid];
-      await this._callService("update_item", { item: item.uid, rename: formatSummary(name, q, notes, category) });
+      await this._callService("update_item", { item: item.uid, rename: formatSummary(name, q, notes, category, unit) });
       await this._fetchItems();
     }, 500);
   }
@@ -340,8 +358,9 @@ class EnhancedShoppingListCard extends HTMLElement {
   async _updateName(item, newName) {
     const li = this._items.find(i => i.uid === item.uid);
     const category = li ? li.category : (item.category || "");
+    const unit = li ? li.unit : (item.unit || "");
     await this._callService("update_item", {
-      item: item.uid, rename: formatSummary(newName.trim(), item.quantity, item.notes || "", category),
+      item: item.uid, rename: formatSummary(newName.trim(), item.quantity, item.notes || "", category, unit),
     });
     await this._fetchItems();
   }
@@ -351,8 +370,9 @@ class EnhancedShoppingListCard extends HTMLElement {
     const name = li ? li.name : item.name;
     const qty = li ? li.quantity : item.quantity;
     const category = li ? li.category : (item.category || "");
+    const unit = li ? li.unit : (item.unit || "");
     await this._callService("update_item", {
-      item: item.uid, rename: formatSummary(name, qty, notes, category),
+      item: item.uid, rename: formatSummary(name, qty, notes, category, unit),
     });
     if (li) li.notes = notes;
     await this._fetchItems();
@@ -363,8 +383,9 @@ class EnhancedShoppingListCard extends HTMLElement {
     const name = li ? li.name : item.name;
     const qty = li ? li.quantity : item.quantity;
     const notes = li ? li.notes : (item.notes || "");
+    const unit = li ? li.unit : (item.unit || "");
     await this._callService("update_item", {
-      item: item.uid, rename: formatSummary(name, qty, notes, category),
+      item: item.uid, rename: formatSummary(name, qty, notes, category, unit),
     });
     if (li) li.category = category;
     await this._fetchItems();
@@ -689,7 +710,8 @@ class EnhancedShoppingListCard extends HTMLElement {
           lastCat = item.category;
         }
         const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
-        const qtyBadge = `<span class="store-qty">${item.quantity} ${this._t("pcs")}</span>`;
+        const unitLabel = item.unit || this._t("pcs");
+        const qtyBadge = `<span class="store-qty">${item.quantity} ${esc(unitLabel)}</span>`;
         const checkColor = this._config.check_color || "var(--primary-color)";
         listHtml += `<div class="store-item-wrap">
           <div class="store-sw-bg">
@@ -1014,7 +1036,7 @@ class EnhancedShoppingListCard extends HTMLElement {
             <button class="qty-btn" data-action="qty-minus">
               <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
             </button>
-            <span class="qty-val" data-action="edit-qty">${item.quantity}</span>
+            <span class="qty-val" data-action="edit-qty">${item.quantity}${item.unit ? " " + esc(item.unit) : ""}</span>
             <button class="qty-btn" data-action="qty-plus">
               <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
             </button>
@@ -1056,7 +1078,7 @@ class EnhancedShoppingListCard extends HTMLElement {
             </div>
             ${item.notes ? `<div class="note-preview done-note">${esc(item.notes)}</div>` : ""}
           </div>
-          ${item.quantity > 1 ? `<span class="done-qty">${item.quantity} ${this._t("pcs")}</span>` : ""}
+          ${(item.quantity > 1 || item.unit) ? `<span class="done-qty">${item.quantity} ${esc(item.unit || this._t("pcs"))}</span>` : ""}
           <button class="icon-btn del-btn" data-action="delete" title="${this._t("remove_from_list")}">
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="var(--error-color,#e53935)" stroke-width="1.5" stroke-linejoin="round"/></svg>
           </button>
@@ -1225,14 +1247,41 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _startEditQty(wrap, item) {
     const el = wrap.querySelector(".qty-val"); if (!el) return;
+    const UNITS = ["", "kg", "dag", "g", "l", "ml", "szt."];
+    const container = document.createElement("div");
+    container.className = "qty-editor-panel";
     const inp = document.createElement("input");
-    inp.className = "inline-edit qty-edit"; inp.type = "number"; inp.min = "1"; inp.value = String(item.quantity);
-    el.replaceWith(inp); inp.focus(); inp.select();
+    inp.className = "inline-edit qty-edit"; inp.type = "number"; inp.min = "0.1"; inp.step = "any"; inp.value = String(item.quantity);
+    container.appendChild(inp);
+    const unitRow = document.createElement("div");
+    unitRow.className = "unit-picker";
+    const currentUnit = item.unit || "";
+    unitRow.innerHTML = UNITS.map(u => {
+      const label = u || this._t("pcs");
+      const active = u === currentUnit ? " unit-active" : "";
+      return `<button class="unit-btn${active}" data-unit="${u}">${esc(label)}</button>`;
+    }).join("");
+    container.appendChild(unitRow);
+    el.replaceWith(container);
+    inp.focus(); inp.select();
+    let selectedUnit = currentUnit;
+    unitRow.querySelectorAll(".unit-btn").forEach(btn => {
+      btn.addEventListener("mousedown", e => { e.preventDefault(); });
+      btn.addEventListener("click", () => {
+        selectedUnit = btn.dataset.unit;
+        unitRow.querySelectorAll(".unit-btn").forEach(b => b.classList.remove("unit-active"));
+        btn.classList.add("unit-active");
+      });
+    });
     let done = false;
-    const save = () => { if (done) return; done = true; const q = parseInt(inp.value, 10);
-      if (!isNaN(q) && q >= 1) this._updateQuantity(item, q); else this._updateLists(); };
-    inp.addEventListener("blur", save);
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); });
+    const save = () => {
+      if (done) return; done = true;
+      const q = parseFloat(inp.value);
+      if (!isNaN(q) && q > 0) this._updateQuantity(item, q, selectedUnit);
+      else this._updateLists();
+    };
+    inp.addEventListener("blur", () => setTimeout(save, 150));
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
   }
 
   _toggleNoteEditor(wrap, item) {
@@ -1353,7 +1402,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     box.style.display = "";
     box.innerHTML = this._suggestions.map(x => {
       const on = x.i.status === "needs_action";
-      const badge = on ? `<span class="sg-badge">${x.i.quantity} ${this._t("pcs")}</span>` : `<span class="sg-badge sg-done">${this._t("bought").toLowerCase()}</span>`;
+      const badge = on ? `<span class="sg-badge">${x.i.quantity} ${esc(x.i.unit || this._t("pcs"))}</span>` : `<span class="sg-badge sg-done">${this._t("bought").toLowerCase()}</span>`;
       const catInfo = x.i.category ? `<span class="sg-cat">${esc(x.i.category)}</span>` : "";
       const checkColor = this._config.check_color || "var(--primary-color)";
       const checkIcon = `<svg class="sg-check" viewBox="0 0 24 24" width="22" height="22"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -1622,8 +1671,22 @@ class EnhancedShoppingListCard extends HTMLElement {
         padding: 4px 8px; background: var(--card-background-color,#fff); color: var(--primary-text-color);
         font-family: inherit; outline: none; width: 100%; box-sizing: border-box;
       }
-      .qty-edit { width: 48px; text-align: center; -moz-appearance: textfield; }
+      .qty-edit { width: 56px; text-align: center; -moz-appearance: textfield; }
       .qty-edit::-webkit-inner-spin-button, .qty-edit::-webkit-outer-spin-button { -webkit-appearance: none; }
+      .qty-editor-panel { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+      .unit-picker {
+        display: flex; gap: 3px; flex-wrap: wrap; justify-content: center;
+      }
+      .unit-btn {
+        padding: 3px 8px; border: 1.5px solid var(--divider-color, #ddd); border-radius: 6px;
+        background: transparent; color: var(--secondary-text-color); font-size: 11px;
+        cursor: pointer; transition: all .12s; font-weight: 600;
+      }
+      .unit-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+      .unit-active {
+        background: var(--primary-color); color: #fff !important;
+        border-color: var(--primary-color);
+      }
 
       /* --- note editor --- */
       .note-editor {
@@ -2508,7 +2571,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.14.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.15.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
