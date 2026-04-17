@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.17.3
+ * Enhanced Shopping List Card v2.17.4
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -1375,7 +1375,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _startEditQty(wrap, item) {
     const el = wrap.querySelector(".qty-val"); if (!el) return;
-    const UNITS = ["", "kg", "dag", "g", "l", "ml", "szt."];
+    const UNITS = ["", "kg", "dag", "g", "l", "ml", "opk."];
     const container = document.createElement("div");
     container.className = "qty-editor-panel";
     const inp = document.createElement("input");
@@ -2742,7 +2742,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.17.3 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.17.4 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
