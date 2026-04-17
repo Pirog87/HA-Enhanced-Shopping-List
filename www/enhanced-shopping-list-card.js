@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.17.1
+ * Enhanced Shopping List Card v2.17.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -703,12 +703,8 @@ class EnhancedShoppingListCard extends HTMLElement {
   async _copyList() {
     const text = this._getListText();
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      const btn = this.shadowRoot.querySelector(".copy-list-btn");
-      btn.classList.add("hdr-on");
-      setTimeout(() => btn.classList.remove("hdr-on"), 1500);
-    } catch (_) {}
+    await this._toClipboard(text);
+    this._flashBtn(".copy-list-btn");
   }
 
   _getListText() {
@@ -732,12 +728,26 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!text) return;
     const title = this._config.title || this._t("default_title");
     if (navigator.share) {
-      try {
-        await navigator.share({ title, text });
-      } catch (_) {}
-    } else {
-      try { await navigator.clipboard.writeText(text); } catch (_) {}
+      try { await navigator.share({ title, text }); return; } catch (_) {}
     }
+    await this._toClipboard(text);
+    this._flashBtn(".share-list-btn");
+  }
+
+  async _toClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try { await navigator.clipboard.writeText(text); return; } catch (_) {}
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;opacity:0;left:-9999px";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); } catch (_) {}
+    document.body.removeChild(ta);
+  }
+
+  _flashBtn(sel) {
+    const btn = this.shadowRoot.querySelector(sel);
+    if (btn) { btn.classList.add("hdr-on"); setTimeout(() => btn.classList.remove("hdr-on"), 1500); }
   }
 
   /* ---------- entity switcher ---------- */
@@ -2731,7 +2741,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.17.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.17.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
