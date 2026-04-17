@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.15.0
+ * Enhanced Shopping List Card v2.16.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -103,6 +103,8 @@ const STRINGS = {
     toggle_badge: "Etykiety kategorii na pozycjach",
     toggle_headers: "Nagłówki kategorii",
     toggle_notes: "Ikona notatki na pozycjach",
+    copy_list: "Kopiuj listę",
+    copied: "Skopiowano!",
     default_title: "Lista zakupów",
     ed_entity: "Lista todo (entity)",
     ed_choose_entity: "-- Wybierz encję todo --",
@@ -167,6 +169,8 @@ const STRINGS = {
     toggle_badge: "Category labels on items",
     toggle_headers: "Category headers",
     toggle_notes: "Note icon on items",
+    copy_list: "Copy list",
+    copied: "Copied!",
     default_title: "Shopping list",
     ed_entity: "Todo list (entity)",
     ed_choose_entity: "-- Choose todo entity --",
@@ -225,6 +229,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     this._hass = null;
     this._rendered = false;
     this._retryCount = 0;
+    this._knownUids = new Set();
     this._viewPrefs = {};
   }
 
@@ -270,6 +275,15 @@ class EnhancedShoppingListCard extends HTMLElement {
   get hass() { return this._hass; }
   _t(key) { return getStrings(this._hass?.language)[key] || key; }
   _swipeThreshold() { return Math.max(10, Math.min(90, parseInt(this._config.swipe_threshold) || 50)) / 100; }
+  _qtyStep(unit) {
+    switch ((unit || "").toLowerCase()) {
+      case "kg": return 0.5;
+      case "dag": return 5;
+      case "g": case "ml": return 100;
+      case "l": return 0.5;
+      default: return 1;
+    }
+  }
 
   _scheduleRetry() {
     if (this._retryCount >= 5) {
@@ -339,8 +353,9 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _updateQuantity(item, newQty, newUnit) {
-    const q = Math.max(0.1, newQty);
     const li = this._items.find(i => i.uid === item.uid);
+    const resolvedUnit = newUnit !== undefined ? newUnit : (li ? li.unit : (item.unit || ""));
+    const q = Math.max(resolvedUnit ? 0.1 : 1, newQty);
     const name = li ? li.name : item.name;
     const notes = li ? li.notes : (item.notes || "");
     const category = li ? li.category : (item.category || "");
@@ -507,6 +522,9 @@ class EnhancedShoppingListCard extends HTMLElement {
             <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="${this._t("toggle_notes")}">
               <svg viewBox="0 0 24 24" width="18" height="18"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
+            <button class="hdr-toggle copy-list-btn" title="${this._t("copy_list")}">
+              <svg viewBox="0 0 24 24" width="18" height="18"><rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            </button>
           </div>
         </div>
         <div class="content">
@@ -585,6 +603,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
     // Store mode
     R.querySelector(".store-mode-btn").addEventListener("click", () => this._enterStoreMode());
+    R.querySelector(".copy-list-btn").addEventListener("click", () => this._copyList());
 
     R.querySelectorAll(".hdr-toggle").forEach(btn => {
       btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
@@ -665,6 +684,26 @@ class EnhancedShoppingListCard extends HTMLElement {
       bar.style.display = "none";
       bar.innerHTML = "";
     }
+  }
+
+  /* ---------- copy list ---------- */
+
+  async _copyList() {
+    const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
+    if (!active.length) return;
+    const lines = active.map(i => {
+      let line = `- ${i.name}`;
+      const u = i.unit || this._t("pcs");
+      if (i.quantity !== 1 || i.unit) line += ` ${i.quantity} ${u}`;
+      if (i.category) line += ` [${i.category}]`;
+      return line;
+    });
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      const btn = this.shadowRoot.querySelector(".copy-list-btn");
+      btn.classList.add("hdr-on");
+      setTimeout(() => btn.classList.remove("hdr-on"), 1500);
+    } catch (_) {}
   }
 
   /* ---------- store mode ---------- */
@@ -893,6 +932,8 @@ class EnhancedShoppingListCard extends HTMLElement {
     R.querySelector(".active-count").textContent = active.length;
     R.querySelector(".completed-count").textContent = completed.length;
     const aList = R.querySelector(".active-list");
+    const addBtn = R.querySelector(".add-btn");
+    if (addBtn) addBtn.classList.toggle("add-btn-pulse", !active.length);
     if (!active.length) {
       aList.innerHTML = `<div class="empty-msg">${this._t("empty")}</div>`;
     } else {
@@ -916,6 +957,13 @@ class EnhancedShoppingListCard extends HTMLElement {
         html += this._htmlActiveItem(item);
       }
       aList.innerHTML = html;
+      if (this._knownUids.size > 0) {
+        aList.querySelectorAll(".item-wrap").forEach(el => {
+          const uid = el.dataset.uid;
+          if (uid && !this._knownUids.has(uid)) el.classList.add("esl-new");
+        });
+      }
+      active.forEach(i => this._knownUids.add(i.uid));
       this._bindItemEvents(aList, active, false);
     }
     const cSec = R.querySelector(".completed-section");
@@ -1129,8 +1177,8 @@ class EnhancedShoppingListCard extends HTMLElement {
         switch (a.dataset.action) {
           case "toggle": this._toggleComplete(item); break;
           case "edit-name": if (!isCompleted) this._startEditName(el, item); else this._toggleComplete(item); break;
-          case "qty-minus": this._updateQuantity(item, item.quantity - 1); break;
-          case "qty-plus": this._updateQuantity(item, item.quantity + 1); break;
+          case "qty-minus": { const step = this._qtyStep(item.unit); this._updateQuantity(item, Math.round((item.quantity - step) * 100) / 100); break; }
+          case "qty-plus": { const step = this._qtyStep(item.unit); this._updateQuantity(item, Math.round((item.quantity + step) * 100) / 100); break; }
           case "edit-qty": this._startEditQty(el, item); break;
           case "toggle-note": this._toggleNoteEditor(el, item); break;
           case "edit-category": if (!isCompleted) this._toggleCategoryEditor(el, item); break;
@@ -1497,6 +1545,13 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .add-btn:hover { transform: scale(1.08); }
       .add-btn:active { transform: scale(.92); }
+      .add-btn-pulse {
+        animation: esl-pulse 1.5s ease-in-out infinite;
+      }
+      @keyframes esl-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.15); filter: brightness(1.2); }
+      }
 
       /* --- suggestions --- */
       .suggestions {
@@ -1552,6 +1607,13 @@ class EnhancedShoppingListCard extends HTMLElement {
       /* --- item tile --- */
       .item-wrap {
         position: relative; border-radius: var(--R); margin-bottom: 4px;
+      }
+      .item-wrap.esl-new {
+        animation: esl-slide-in .35s ease-out;
+      }
+      @keyframes esl-slide-in {
+        from { opacity: 0; transform: translateY(-12px) scale(.97); max-height: 0; }
+        to { opacity: 1; transform: translateY(0) scale(1); max-height: 120px; }
       }
       .active-list .item-wrap:last-child,
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
@@ -2571,7 +2633,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.15.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.16.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
