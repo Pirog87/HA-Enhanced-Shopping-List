@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.17.0
+ * Enhanced Shopping List Card v2.17.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -714,13 +714,17 @@ class EnhancedShoppingListCard extends HTMLElement {
   _getListText() {
     const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
     if (!active.length) return "";
-    return active.map(i => {
+    const title = this._config.title || this._t("default_title");
+    const lines = active.map(i => {
       let line = `- ${i.name}`;
-      const u = i.unit || this._t("pcs");
-      if (i.quantity !== 1 || i.unit) line += ` ${i.quantity} ${u}`;
-      if (i.category) line += ` [${i.category}]`;
+      if (i.unit) {
+        line += ` \u2014 ${i.quantity} ${i.unit}`;
+      } else if (i.quantity > 1) {
+        line += ` ${i.quantity} ${this._t("pcs")}`;
+      }
       return line;
-    }).join("\n");
+    });
+    return `\uD83D\uDED2 ${title}:\n\n${lines.join("\n")}`;
   }
 
   async _shareList() {
@@ -2727,7 +2731,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.17.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.17.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
