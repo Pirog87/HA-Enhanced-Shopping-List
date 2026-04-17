@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.13.6
+ * Enhanced Shopping List Card v2.14.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -689,7 +689,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           lastCat = item.category;
         }
         const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
-        const qtyBadge = item.quantity > 1 ? `<span class="store-qty">${item.quantity} ${this._t("pcs")}</span>` : "";
+        const qtyBadge = `<span class="store-qty">${item.quantity} ${this._t("pcs")}</span>`;
         const checkColor = this._config.check_color || "var(--primary-color)";
         listHtml += `<div class="store-item-wrap">
           <div class="store-sw-bg">
@@ -2508,16 +2508,66 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.13.6 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.14.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
 
 // Auto-recover from race condition on hard refresh:
 // If the card rendered as "error" before this JS loaded,
-// trigger a Lovelace view re-render to pick up the now-defined element.
-setTimeout(() => {
-  if (customElements.get("enhanced-shopping-list-card")) {
-    window.dispatchEvent(new CustomEvent("location-changed"));
+// force HA to re-render by finding and replacing error cards that
+// reference our element type.
+(function eslAutoRecover() {
+  if (window.__eslRecoverScheduled) return;
+  window.__eslRecoverScheduled = true;
+
+  const findAndFixErrorCards = (root) => {
+    if (!root) return 0;
+    let fixed = 0;
+    const walk = (node) => {
+      if (!node) return;
+      // Check shadow root
+      if (node.shadowRoot) walk(node.shadowRoot);
+      // Check children
+      const children = node.querySelectorAll ? node.querySelectorAll("*") : [];
+      for (const el of children) {
+        const tag = el.tagName && el.tagName.toLowerCase();
+        if (tag === "hui-error-card" || tag === "hui-warning") {
+          const cfg = el._config || el.config;
+          const type = cfg && (cfg.origConfig?.type || cfg.type || "");
+          if (typeof type === "string" && type.includes("enhanced-shopping-list-card")) {
+            // Replace with a fresh card element
+            const parent = el.parentNode;
+            if (parent && cfg && cfg.origConfig) {
+              try {
+                const newCard = document.createElement("enhanced-shopping-list-card");
+                newCard.setConfig(cfg.origConfig);
+                parent.replaceChild(newCard, el);
+                fixed++;
+              } catch (_) {}
+            }
+          }
+        }
+        if (el.shadowRoot) walk(el.shadowRoot);
+      }
+    };
+    walk(root);
+    return fixed;
+  };
+
+  const tryRecover = (attempt) => {
+    if (!customElements.get("enhanced-shopping-list-card")) return;
+    const ha = document.querySelector("home-assistant");
+    const fixed = findAndFixErrorCards(ha);
+    if (fixed === 0 && attempt < 5) {
+      setTimeout(() => tryRecover(attempt + 1), 300);
+    }
+  };
+
+  // Start after DOM settles
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => tryRecover(0));
+  } else {
+    setTimeout(() => tryRecover(0), 100);
   }
-}, 1000);
+})();
