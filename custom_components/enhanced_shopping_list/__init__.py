@@ -137,10 +137,11 @@ async def _async_register_lovelace_resource(
             async_call_later(
                 hass,
                 3,
-                lambda _now: hass.async_create_task(
+                lambda _now: hass.async_create_background_task(
                     _async_register_lovelace_resource(
                         hass, url, _retries=_retries + 1
-                    )
+                    ),
+                    name="esl_register_resource_retry",
                 ),
             )
         else:
@@ -170,10 +171,11 @@ async def _async_register_lovelace_resource(
             async_call_later(
                 hass,
                 3,
-                lambda _now: hass.async_create_task(
+                lambda _now: hass.async_create_background_task(
                     _async_register_lovelace_resource(
                         hass, url, _retries=_retries + 1
-                    )
+                    ),
+                    name="esl_register_resource_retry",
                 ),
             )
         else:
