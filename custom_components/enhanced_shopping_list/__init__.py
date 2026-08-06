@@ -38,8 +38,35 @@ _JS_PATH = Path(__file__).parent / CARD_FILENAME
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up via YAML — just ensure the integration is loaded."""
+    """Set up the integration — register the static path as early as possible.
+
+    The HTTP server accepts requests before config entries finish setting
+    up. If a client loads the dashboard in that window and requests our JS,
+    it would get a 404 — and 404 responses are heuristically cacheable
+    (RFC 7231), so Android WebView may keep serving the cached 404 even
+    after the file becomes available. Registering the static path here
+    (before any entry setup) closes that window.
+    """
+    await _async_register_static_path(hass)
     return True
+
+
+async def _async_register_static_path(hass: HomeAssistant) -> None:
+    """Register the static HTTP path serving the card JS (idempotent)."""
+    if hass.data.get(DOMAIN, {}).get("static_registered"):
+        return
+    try:
+        await hass.http.async_register_static_paths([
+            StaticPathConfig(
+                url_path=URL_BASE,
+                path=str(Path(__file__).parent),
+                cache_headers=False,
+            )
+        ])
+        hass.data.setdefault(DOMAIN, {})["static_registered"] = True
+    except RuntimeError:
+        _LOGGER.debug("Static path already registered: %s", URL_BASE)
+        hass.data.setdefault(DOMAIN, {})["static_registered"] = True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -101,17 +128,9 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     # Store URL so async_unload_entry can remove it on reload
     hass.data[DOMAIN]["js_url"] = url_with_cache_buster
 
-    # Step 1: Register static HTTP path so HA serves the JS file
-    try:
-        await hass.http.async_register_static_paths([
-            StaticPathConfig(
-                url_path=URL_BASE,
-                path=str(Path(__file__).parent),
-                cache_headers=False,
-            )
-        ])
-    except RuntimeError:
-        _LOGGER.debug("Static path already registered: %s", URL_BASE)
+    # Step 1: Ensure static HTTP path is registered (normally already done
+    # in async_setup, which runs earlier — this is a safety net).
+    await _async_register_static_path(hass)
 
     # Step 2: Inject as extra JS (loads on every page, all Lovelace modes)
     add_extra_js_url(hass, url_with_cache_buster)
