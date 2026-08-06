@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from pathlib import Path
 
 from homeassistant.components.frontend import add_extra_js_url, remove_extra_js_url
@@ -51,12 +50,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
 
-    # Cache buster: time-based, changes on every reload to force fresh JS
-    setup_ts = str(int(time.time()))
-    await _async_register_frontend(hass, setup_ts)
+    # Cache buster based on VERSION only — stable across restarts/reloads,
+    # changes only when the integration is actually updated. A stable URL
+    # means the Lovelace resource stored in .storage stays valid across
+    # restarts, so clients that load the dashboard before this integration
+    # finishes setup still reference a working script URL (no race).
+    await _async_register_frontend(hass)
 
     # Clean up stale URL only *after* the new one is active, and only if
-    # the cache buster actually changed (i.e. the file was updated).
+    # the cache buster actually changed (i.e. the integration was updated).
     new_url = hass.data[DOMAIN]["js_url"]
     if prev_url and prev_url != new_url:
         try:
@@ -64,7 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except (KeyError, ValueError):
             pass
 
-    _LOGGER.info("Enhanced Shopping List v%s loaded (ts=%s)", VERSION, setup_ts)
+    _LOGGER.info("Enhanced Shopping List v%s loaded", VERSION)
     return True
 
 
@@ -92,9 +94,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 #  Frontend: serve JS and register as Lovelace resource
 # ------------------------------------------------------------------
 
-async def _async_register_frontend(hass: HomeAssistant, setup_ts: str) -> None:
+async def _async_register_frontend(hass: HomeAssistant) -> None:
     """Serve JS from integration directory and register as Lovelace resource."""
-    url_with_cache_buster = f"{CARD_URL}?v={VERSION}.{setup_ts}"
+    url_with_cache_buster = f"{CARD_URL}?v={VERSION}"
 
     # Store URL so async_unload_entry can remove it on reload
     hass.data[DOMAIN]["js_url"] = url_with_cache_buster
