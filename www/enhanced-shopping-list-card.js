@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.18.3
+ * Enhanced Shopping List Card v2.19.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -102,7 +102,15 @@ const STRINGS = {
     toggle_group: "Grupuj po kategoriach",
     toggle_badge: "Etykiety kategorii na pozycjach",
     toggle_headers: "Nagłówki kategorii",
-    toggle_notes: "Ikona notatki na pozycjach",
+    toggle_notes: "Notatki pod nazwą produktu",
+    view_menu: "Widok i udostępnianie",
+    ed_name: "Nazwa",
+    ed_qty: "Ilość",
+    ed_note: "Notatka",
+    ed_done: "Gotowe",
+    ed_new_category: "+ Nowa",
+    step: "krok",
+    ed_add_top: "Pole dodawania zawsze nad listą (domyślnie na telefonie jest na dole)",
     copy_list: "Kopiuj listę",
     copied: "Skopiowano!",
     share_list: "Udostępnij listę",
@@ -119,7 +127,7 @@ const STRINGS = {
     ed_color_none: "Brak (motyw)",
     ed_text_color: "Kolor tekstu",
     ed_icon_color: "Kolor ikon (tag, notatka)",
-    ed_check_color: "Kolor znacznika ✓ (podpowiedzi)",
+    ed_check_color: "Kolor pola „kupione” i znacznika ✓",
     ed_categories: "Kategorie",
     ed_group_sort: "Grupuj i sortuj po kategoriach",
     ed_show_badge: "Pokazuj nazwę kategorii na pozycji",
@@ -128,7 +136,7 @@ const STRINGS = {
     ed_cat_order_empty: "Dodaj kategorie do produktów, aby ustalić kolejność",
     ed_cat_rename: "Zmień nazwę kategorii",
     ed_view: "Widok",
-    ed_show_notes: "Pokazuj ikonę notatki na pozycjach",
+    ed_show_notes: "Pokazuj notatki pod nazwą produktu",
     ed_item_size: "Rozmiar pozycji",
     ed_swipe_threshold: "Próg swipe (% szerokości)",
     ed_section_standard: "Widok standardowy",
@@ -170,7 +178,15 @@ const STRINGS = {
     toggle_group: "Group by categories",
     toggle_badge: "Category labels on items",
     toggle_headers: "Category headers",
-    toggle_notes: "Note icon on items",
+    toggle_notes: "Notes under the product name",
+    view_menu: "View and sharing",
+    ed_name: "Name",
+    ed_qty: "Quantity",
+    ed_note: "Note",
+    ed_done: "Done",
+    ed_new_category: "+ New",
+    step: "step",
+    ed_add_top: "Always keep the add field above the list (on phones it is at the bottom by default)",
     copy_list: "Copy list",
     copied: "Copied!",
     share_list: "Share list",
@@ -187,7 +203,7 @@ const STRINGS = {
     ed_color_none: "None (theme)",
     ed_text_color: "Text color",
     ed_icon_color: "Icon color (tag, note)",
-    ed_check_color: "Check icon color (suggestions)",
+    ed_check_color: "\"Bought\" ring and check icon color",
     ed_categories: "Categories",
     ed_group_sort: "Group and sort by categories",
     ed_show_badge: "Show category name on items",
@@ -196,7 +212,7 @@ const STRINGS = {
     ed_cat_order_empty: "Add categories to products to set the order",
     ed_cat_rename: "Rename category",
     ed_view: "View",
-    ed_show_notes: "Show note icon on items",
+    ed_show_notes: "Show notes under the product name",
     ed_item_size: "Item size",
     ed_swipe_threshold: "Swipe threshold (% of width)",
     ed_section_standard: "Standard view",
@@ -504,51 +520,57 @@ class EnhancedShoppingListCard extends HTMLElement {
           --esl-done-bg: ${doneBg};
           --esl-text-color: ${textColor || "var(--primary-text-color)"};
           --esl-icon-color: ${iconColor || "var(--secondary-text-color)"};
+          --esl-check: ${this._config.check_color || "var(--primary-color)"};
         }
         ${EnhancedShoppingListCard.CSS}
       </style>
-      <ha-card class="${sizeClass.trim()}">
+      <ha-card class="${(sizeClass + (this._config.add_position === "top" ? " add-top" : "")).trim()}">
+        <div class="esl-w"><div class="esl-in">
         <div class="header">
-          <button class="header-title entity-switch-btn" title="${this._t("switch_list")}">
-            ${esc(title)} <svg class="entity-switch-arrow" viewBox="0 0 24 24" width="14" height="14"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
+          <div class="header-main">
+            <button class="header-title entity-switch-btn" title="${this._t("switch_list")}">
+              <span class="header-title-text">${esc(title)}</span><svg class="entity-switch-arrow" viewBox="0 0 24 24" width="20" height="20"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="header-sub"><b class="active-count">0</b> ${this._t("to_buy").toLowerCase()}</div>
+          </div>
           <div class="entity-switch-dropdown" style="display:none"></div>
-          <div class="header-toggles">
-            <button class="hdr-toggle store-mode-btn" title="${this._t("store_mode")}">
-              <svg viewBox="0 0 24 24" width="26" height="26"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="1.5"/><path d="M16 10a4 4 0 01-8 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <button class="store-mode-btn" title="${this._t("store_mode")}">
+            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="1.8"/><path d="M16 10a4 4 0 01-8 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>${this._t("store_mode")}</span>
+          </button>
+          <button class="menu-btn" title="${this._t("view_menu")}" aria-label="${this._t("view_menu")}" aria-haspopup="true" aria-expanded="false">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+          </button>
+          <div class="header-menu" role="menu" style="display:none">
+            <button class="menu-row${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" role="menuitemcheckbox">
+              <svg viewBox="0 0 24 24" width="20" height="20"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="ml">${this._t("toggle_group")}</span><span class="menu-sw"></span>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_categories") ? " hdr-on" : ""}" data-toggle="show_categories" title="${this._t("toggle_group")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            <button class="menu-row${this._getViewPref("show_category_headers") ? " hdr-on" : ""}" data-toggle="show_category_headers" role="menuitemcheckbox">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 6h16M4 10h10M4 14h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="ml">${this._t("toggle_headers")}</span><span class="menu-sw"></span>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_category_badge") ? " hdr-on" : ""}" data-toggle="show_category_badge" title="${this._t("toggle_badge")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg>
+            <button class="menu-row${this._getViewPref("show_category_badge") ? " hdr-on" : ""}" data-toggle="show_category_badge" role="menuitemcheckbox">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg><span class="ml">${this._t("toggle_badge")}</span><span class="menu-sw"></span>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_category_headers") ? " hdr-on" : ""}" data-toggle="show_category_headers" title="${this._t("toggle_headers")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M4 6h16M4 10h10M4 14h16M4 18h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            <button class="menu-row${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" role="menuitemcheckbox">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.6"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="ml">${this._t("toggle_notes")}</span><span class="menu-sw"></span>
             </button>
-            <button class="hdr-toggle${this._getViewPref("show_notes") ? " hdr-on" : ""}" data-toggle="show_notes" title="${this._t("toggle_notes")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="none" stroke="currentColor" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            </button>
-            <button class="hdr-toggle copy-list-btn" title="${this._t("copy_list")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            </button>
-            <button class="hdr-toggle share-list-btn" title="${this._t("share_list")}">
-              <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="18" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="6" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="18" cy="19" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" stroke="currentColor" stroke-width="1.5"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" stroke="currentColor" stroke-width="1.5"/></svg>
-            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-row copy-list-btn" role="menuitem"><svg viewBox="0 0 24 24" width="20" height="20"><rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span class="ml">${this._t("copy_list")}</span></button>
+            <button class="menu-row share-list-btn" role="menuitem"><svg viewBox="0 0 24 24" width="20" height="20"><circle cx="18" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="6" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="18" cy="19" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" stroke="currentColor" stroke-width="1.6"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" stroke="currentColor" stroke-width="1.6"/></svg><span class="ml">${this._t("share_list")}</span></button>
           </div>
         </div>
-        <div class="content">
+        <div class="content"><div class="cols">
+          <div class="main-col">
           <div class="add-section">
+            <div class="suggestions" style="display:none"></div>
             <div class="input-row">
-              <input class="add-input" type="text" placeholder="${this._t("add_placeholder")}" />
-              <button class="add-cat-btn" title="${this._t("add_category_title")}">
-                <svg viewBox="0 0 24 24" width="24" height="24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="var(--secondary-text-color)" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="var(--secondary-text-color)"/></svg>
-              </button>
-              <button class="add-btn" title="${this._t("add_title")}">
-                <svg viewBox="0 0 24 24" width="28" height="28">
-                  <circle cx="12" cy="12" r="11" fill="var(--primary-color)"/>
-                  <path d="M12 7v10M7 12h10" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
-                </svg>
+              <div class="add-field">
+                <input class="add-input" type="text" enterkeyhint="done" placeholder="${this._t("add_placeholder")}" />
+                <button class="add-cat-btn" title="${this._t("add_category_title")}" aria-label="${this._t("add_category_title")}">
+                  <svg viewBox="0 0 24 24" width="22" height="22"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="var(--secondary-text-color)" stroke-width="1.6"/><circle cx="7" cy="7" r="1.5" fill="var(--secondary-text-color)"/></svg>
+                </button>
+              </div>
+              <button class="add-btn" title="${this._t("add_title")}" aria-label="${this._t("add_title")}">
+                <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
               </button>
             </div>
             <div class="pending-cat-bar" style="display:none"></div>
@@ -559,11 +581,10 @@ class EnhancedShoppingListCard extends HTMLElement {
                 <button class="cat-save add-cat-save">${this._t("save")}</button>
               </div>
             </div>
-            <div class="suggestions" style="display:none"></div>
           </div>
           <div class="section active-section">
-            <div class="section-title">${this._t("to_buy")} <span class="badge-count active-count">0</span></div>
             <div class="active-list"></div>
+          </div>
           </div>
           <div class="section completed-section" style="display:none">
             <div class="section-title completed-header">
@@ -590,7 +611,8 @@ class EnhancedShoppingListCard extends HTMLElement {
             </div>
             <div class="completed-list" style="height:0;overflow:hidden"></div>
           </div>
-        </div>
+        </div></div>
+        </div></div>
       </ha-card>`;
     this._bindGlobalEvents();
   }
@@ -618,9 +640,10 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!navigator.share) R.querySelector(".share-list-btn").style.display = "none";
     R.querySelector(".entity-switch-btn").addEventListener("click", () => this._toggleEntitySwitcher());
 
-    R.querySelectorAll(".hdr-toggle").forEach(btn => {
+    R.querySelectorAll("[data-toggle]").forEach(btn => {
       btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
     });
+    R.querySelector(".menu-btn").addEventListener("click", () => this._toggleHeaderMenu());
     R.querySelector(".completed-header").addEventListener("click", e => {
       if (e.target.closest(".clear-all-btn") || e.target.closest(".hdr-toggle")) return;
       this._completedExpanded = !this._completedExpanded;
@@ -747,8 +770,32 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _flashBtn(sel) {
-    const btn = this.shadowRoot.querySelector(sel);
-    if (btn) { btn.classList.add("hdr-on"); setTimeout(() => btn.classList.remove("hdr-on"), 1500); }
+    const lbl = this.shadowRoot.querySelector(`${sel} .ml`);
+    if (!lbl || lbl.dataset.orig) return;
+    lbl.dataset.orig = lbl.textContent;
+    lbl.textContent = this._t("copied");
+    setTimeout(() => { lbl.textContent = lbl.dataset.orig; delete lbl.dataset.orig; }, 1500);
+  }
+
+  _toggleHeaderMenu() {
+    const R = this.shadowRoot;
+    const menu = R.querySelector(".header-menu"), btn = R.querySelector(".menu-btn");
+    if (menu.style.display !== "none") { this._closeHeaderMenu(); return; }
+    menu.style.display = "";
+    btn.classList.add("menu-open"); btn.setAttribute("aria-expanded", "true");
+    this._menuCloser = e => {
+      const path = e.composedPath();
+      if (!path.includes(menu) && !path.includes(btn)) this._closeHeaderMenu();
+    };
+    setTimeout(() => { if (this._menuCloser) document.addEventListener("click", this._menuCloser); }, 10);
+  }
+
+  _closeHeaderMenu() {
+    const R = this.shadowRoot;
+    const menu = R.querySelector(".header-menu"), btn = R.querySelector(".menu-btn");
+    if (menu) menu.style.display = "none";
+    if (btn) { btn.classList.remove("menu-open"); btn.setAttribute("aria-expanded", "false"); }
+    if (this._menuCloser) { document.removeEventListener("click", this._menuCloser); this._menuCloser = null; }
   }
 
   /* ---------- entity switcher ---------- */
@@ -776,12 +823,14 @@ class EnhancedShoppingListCard extends HTMLElement {
           this._fetchItems();
           const titleEl = R.querySelector(".entity-switch-btn");
           const fn = this._hass.states[newEntity]?.attributes?.friendly_name || newEntity;
-          titleEl.innerHTML = `${esc(fn)} <svg class="entity-switch-arrow" viewBox="0 0 24 24" width="14" height="14"><path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+          const tt = titleEl.querySelector(".header-title-text");
+          if (tt) tt.textContent = fn;
+          this._edit = null;
         }
       });
     });
     const closeOnClick = (e) => {
-      if (!dd.contains(e.target)) { dd.style.display = "none"; document.removeEventListener("click", closeOnClick); }
+      if (!e.composedPath().includes(dd)) { dd.style.display = "none"; document.removeEventListener("click", closeOnClick); }
     };
     setTimeout(() => document.addEventListener("click", closeOnClick), 10);
   }
@@ -1009,6 +1058,16 @@ class EnhancedShoppingListCard extends HTMLElement {
     const R = this.shadowRoot; if (!R) return;
     const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
     const completed = this._sortItems(this._items.filter(i => i.status === "completed"));
+    if (this._edit && !active.some(i => i.uid === this._edit.uid)) this._edit = null;
+    // Re-rendering must not interrupt typing in the edit panel
+    let refocus = null;
+    const ae = R.activeElement;
+    if (this._edit && ae && ae.dataset && ae.dataset.f && ae.closest(".edit-panel")) {
+      refocus = { f: ae.dataset.f };
+      try { refocus.s = ae.selectionStart; refocus.e = ae.selectionEnd; } catch (_) {}
+    }
+    const cols = R.querySelector(".cols");
+    if (cols) cols.classList.toggle("has-done", completed.length > 0);
     R.querySelector(".active-count").textContent = active.length;
     R.querySelector(".completed-count").textContent = completed.length;
     const aList = R.querySelector(".active-list");
@@ -1022,21 +1081,26 @@ class EnhancedShoppingListCard extends HTMLElement {
       const hasAnyCat = catEnabled && active.some(i => i.category);
       let html = "";
       let lastCat = null;
+      const catCounts = {};
+      for (const item of active) { const c = item.category || ""; catCounts[c] = (catCounts[c] || 0) + 1; }
       for (const item of active) {
         if (hasAnyCat && showHeaders) {
           const cat = item.category || "";
           if (cat !== lastCat) {
-            if (cat) {
-              html += `<div class="cat-header"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 3H4a1 1 0 00-1 1v6a1 1 0 001 1h1l5 5V3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20.5 11.5L17 8l-3 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(cat)}</div>`;
-            } else {
-              html += `<div class="cat-header cat-header-none">${this._t("other")}</div>`;
-            }
+            const catLabel = this._catLabelHtml(cat);
+            html += `<div class="cat-header${cat ? "" : " cat-header-none"}"><span class="cat-header-name">${catLabel}</span><span class="cat-header-count">${catCounts[cat]}</span></div>`;
             lastCat = cat;
           }
         }
         html += this._htmlActiveItem(item);
       }
       aList.innerHTML = html;
+      if (refocus) {
+        const f = aList.querySelector(`.edit-panel [data-f="${refocus.f}"]`);
+        if (f) {
+          try { f.focus({ preventScroll: true }); if (refocus.s != null) f.setSelectionRange(refocus.s, refocus.e); } catch (_) {}
+        }
+      }
       if (this._knownUids.size > 0) {
         aList.querySelectorAll(".item-wrap").forEach(el => {
           const uid = el.dataset.uid;
@@ -1062,7 +1126,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           const cat = item.category || "";
           if (cat !== lastCatC) {
             if (cat) {
-              cHtml += `<div class="cat-header"><svg viewBox="0 0 24 24" width="14" height="14"><path d="M10 3H4a1 1 0 00-1 1v6a1 1 0 001 1h1l5 5V3z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M20.5 11.5L17 8l-3 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> ${esc(cat)}</div>`;
+              cHtml += `<div class="cat-header"><span class="cat-header-name">${this._catLabelHtml(cat)}</span></div>`;
             } else {
               cHtml += `<div class="cat-header cat-header-none">${this._t("other")}</div>`;
             }
@@ -1075,6 +1139,11 @@ class EnhancedShoppingListCard extends HTMLElement {
     }
     this._bindItemEvents(cList, completed, true);
     this._updateCompletedVis();
+  }
+
+  _catLabelHtml(cat) {
+    const m = (cat || "").match(/^([^\p{L}\p{N}]+)(.+)$/u);
+    return m ? `<span class="cat-header-emoji">${esc(m[1].trim())}</span>${esc(m[2].trim())}` : esc(cat || this._t("other"));
   }
 
   _updateCompletedVis() {
@@ -1122,21 +1191,20 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   _updateHeaderToggles() {
     const R = this.shadowRoot; if (!R) return;
-    R.querySelectorAll(".hdr-toggle").forEach(btn => {
+    R.querySelectorAll("[data-toggle]").forEach(btn => {
       const key = btn.dataset.toggle;
       btn.classList.toggle("hdr-on", this._getViewPref(key));
     });
   }
 
   _htmlActiveItem(item) {
+    if (this._edit && this._edit.uid === item.uid) return this._htmlEditPanel(item);
     const showNotes = this._getViewPref("show_notes");
-    const hn = item.notes ? " has-note" : "";
-    const hc = item.category ? " has-cat" : "";
     const showBadge = this._getViewPref("show_category_badge");
-    const catBadge = (item.category && showBadge)
-      ? `<span class="cat-badge" data-action="edit-category">${esc(item.category)}</span>` : "";
-    const notePreview = item.notes
-      ? `<div class="note-preview" data-action="toggle-note">${esc(item.notes)}</div>` : "";
+    const catBadge = (item.category && showBadge) ? `<span class="cat-badge">${esc(item.category)}</span>` : "";
+    const notePreview = (item.notes && showNotes) ? `<span class="note-preview">${esc(item.notes)}</span>` : "";
+    const qtyText = `${item.quantity} ${esc(item.unit || this._t("pcs"))}`;
+    const one = item.quantity === 1 && !item.unit;
     return `
     <div class="item-wrap" data-uid="${item.uid}">
       <div class="swipe-row">
@@ -1146,43 +1214,21 @@ class EnhancedShoppingListCard extends HTMLElement {
         </div>
         <div class="sw-bg sw-left" data-action="swipe-delete"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></div>
         <div class="item" data-uid="${item.uid}">
-          <div class="chk" data-action="toggle"><div class="chk-inner"></div></div>
           <div class="item-body">
-            <div class="item-name-row">
-              <span class="item-name" data-action="edit-name">${esc(item.name)}</span>
-              ${catBadge}
-            </div>
-            ${notePreview}
+            <div class="item-name">${esc(item.name)}</div>
+            ${(notePreview || catBadge) ? `<div class="item-sub">${catBadge}${notePreview}</div>` : ""}
           </div>
-          <button class="icon-btn cat-btn${hc}" data-action="edit-category" title="${item.category || this._t("category")}">
-            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="${item.category ? "var(--primary-color)" : "none"}" stroke="${item.category ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="7" cy="7" r="1.5" fill="${item.category ? "#fff" : "var(--esl-icon-color)"}"/></svg>
-          </button>
-          ${showNotes ? `<button class="icon-btn${hn}" data-action="toggle-note" title="${item.notes ? esc(item.notes) : this._t("add_note")}">
-            <svg viewBox="0 0 24 24" width="20" height="20"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z" fill="${item.notes ? "var(--primary-color)" : "none"}" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/><polyline points="14,2 14,8 20,8" fill="none" stroke="${item.notes ? "var(--primary-color)" : "var(--esl-icon-color)"}" stroke-width="1.5"/></svg>
-          </button>` : ""}
+          <span class="qty-pill${one ? " one" : ""}">${qtyText}</span>
           <div class="qty-area">
-            <button class="qty-btn" data-action="qty-minus">
-              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            <button class="qty-btn" data-action="qty-minus" aria-label="-">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             </button>
-            <span class="qty-val" data-action="edit-qty">${item.quantity}${item.unit ? " " + esc(item.unit) : ""}</span>
-            <button class="qty-btn" data-action="qty-plus">
-              <svg viewBox="0 0 24 24" width="14" height="14"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            <span class="qty-val">${qtyText}</span>
+            <button class="qty-btn" data-action="qty-plus" aria-label="+">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             </button>
           </div>
-        </div>
-      </div>
-      <div class="note-editor" style="display:none">
-        <textarea class="note-textarea" placeholder="${this._t("add_note_placeholder")}">${esc(item.notes || "")}</textarea>
-        <div class="note-bar">
-          <button class="note-save">${this._t("save")}</button>
-        </div>
-      </div>
-      <div class="cat-editor" style="display:none">
-        <div class="cat-chips"></div>
-        <div class="cat-input-row">
-          <input class="cat-input" type="text" placeholder="${this._t("new_category")}" value="${esc(item.category || "")}" />
-          <button class="cat-save">${this._t("save")}</button>
-          ${item.category ? `<button class="cat-remove">${this._t("remove")}</button>` : ""}
+          <button class="chk" data-action="toggle" title="${this._t("bought")}" aria-label="${this._t("bought")}"><span class="chk-ring"></span></button>
         </div>
       </div>
     </div>`;
@@ -1196,15 +1242,12 @@ class EnhancedShoppingListCard extends HTMLElement {
     <div class="item-wrap" data-uid="${item.uid}">
       <div class="swipe-row">
         <div class="item completed-item" data-uid="${item.uid}">
-          <div class="chk chk-done" data-action="toggle">
+          <div class="chk-d" data-action="toggle">
             <svg viewBox="0 0 24 24" width="16" height="16"><polyline points="4,12 10,18 20,6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </div>
           <div class="item-body">
-            <div class="item-name-row">
-              <span class="item-name done-name">${esc(item.name)}</span>
-              ${catBadge}
-            </div>
-            ${item.notes ? `<div class="note-preview done-note">${esc(item.notes)}</div>` : ""}
+            <div class="item-name done-name">${esc(item.name)}</div>
+            ${(item.notes || catBadge) ? `<div class="item-sub">${catBadge}${item.notes ? `<span class="note-preview done-note">${esc(item.notes)}</span>` : ""}</div>` : ""}
           </div>
           ${(item.quantity > 1 || item.unit) ? `<span class="done-qty">${item.quantity} ${esc(item.unit || this._t("pcs"))}</span>` : ""}
           <button class="icon-btn del-btn" data-action="delete" title="${this._t("remove_from_list")}">
@@ -1223,8 +1266,11 @@ class EnhancedShoppingListCard extends HTMLElement {
       const item = items.find(i => i.uid === uid);
       if (!item) return;
 
+      if (el.classList.contains("editing")) { this._bindEditPanel(el, item); return; }
+
       const itemEl = el.querySelector(".item");
       const swipeRow = el.querySelector(".swipe-row");
+      let swiped = false;
 
       swipeRow.addEventListener("click", e => {
         const a = e.target.closest("[data-action]");
@@ -1252,16 +1298,13 @@ class EnhancedShoppingListCard extends HTMLElement {
           return;
         }
 
-        if (!a) { if (isCompleted) this._toggleComplete(item); return; }
+        if (swiped) { swiped = false; return; }
+        if (!a) { if (isCompleted) this._toggleComplete(item); else this._openEdit(item); return; }
         e.stopPropagation();
         switch (a.dataset.action) {
           case "toggle": this._toggleComplete(item); break;
-          case "edit-name": if (!isCompleted) this._startEditName(el, item); else this._toggleComplete(item); break;
           case "qty-minus": { const step = this._qtyStep(item.unit); this._updateQuantity(item, Math.round((item.quantity - step) * 100) / 100); break; }
           case "qty-plus": { const step = this._qtyStep(item.unit); this._updateQuantity(item, Math.round((item.quantity + step) * 100) / 100); break; }
-          case "edit-qty": this._startEditQty(el, item); break;
-          case "toggle-note": this._toggleNoteEditor(el, item); break;
-          case "edit-category": if (!isCompleted) this._toggleCategoryEditor(el, item); break;
           case "delete": this._showDeleteConfirm(item, el, itemEl, swipeRow); break;
         }
       });
@@ -1290,7 +1333,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       itemEl.addEventListener("pointerdown", e => {
         if (e.button !== 0) return;
         ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
-        off = 0;
+        off = 0; swiped = false;
         resetOtherSwipes();
       });
 
@@ -1301,6 +1344,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
             ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
             if (ts.dir === "h") {
+              swiped = true;
               try { itemEl.setPointerCapture(e.pointerId); } catch(_) {}
             } else { ts = null; return; }
           } else return;
@@ -1359,130 +1403,149 @@ class EnhancedShoppingListCard extends HTMLElement {
     });
   }
 
-  /* ---------- inline editors ---------- */
+  /* ---------- edit panel ---------- */
 
-  _startEditName(wrap, item) {
-    const el = wrap.querySelector(".item-name"); if (!el) return;
-    const inp = document.createElement("input");
-    inp.className = "inline-edit"; inp.type = "text"; inp.value = item.name;
-    el.replaceWith(inp); inp.focus(); inp.select();
-    let done = false;
-    const save = () => { if (done) return; done = true; const v = inp.value.trim();
-      if (v && v !== item.name) this._updateName(item, v); else this._updateLists(); };
-    inp.addEventListener("blur", save);
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") inp.blur(); if (e.key === "Escape") { done = true; this._updateLists(); } });
+  _orderedCategories(current) {
+    const out = [], seen = new Set();
+    const push = c => { const k = (c || "").toLowerCase(); if (c && !seen.has(k)) { seen.add(k); out.push(c); } };
+    push(current);
+    (this._config.category_order || []).forEach(push);
+    this._getCategories().forEach(push);
+    return out;
   }
 
-  _startEditQty(wrap, item) {
-    const el = wrap.querySelector(".qty-val"); if (!el) return;
-    const UNITS = ["", "kg", "dag", "g", "l", "ml", "opk."];
-    const container = document.createElement("div");
-    container.className = "qty-editor-panel";
-    const inp = document.createElement("input");
-    inp.className = "inline-edit qty-edit"; inp.type = "number"; inp.min = "0.1"; inp.step = "any"; inp.value = String(item.quantity);
-    container.appendChild(inp);
-    const unitRow = document.createElement("div");
-    unitRow.className = "unit-picker";
-    const currentUnit = item.unit || "";
-    unitRow.innerHTML = UNITS.map(u => {
-      const label = u || this._t("pcs");
-      const active = u === currentUnit ? " unit-active" : "";
-      return `<button class="unit-btn${active}" data-unit="${u}">${esc(label)}</button>`;
-    }).join("");
-    container.appendChild(unitRow);
-    el.replaceWith(container);
-    inp.focus(); inp.select();
-    let selectedUnit = currentUnit;
-    unitRow.querySelectorAll(".unit-btn").forEach(btn => {
-      btn.addEventListener("mousedown", e => { e.preventDefault(); });
-      btn.addEventListener("click", () => {
-        selectedUnit = btn.dataset.unit;
-        unitRow.querySelectorAll(".unit-btn").forEach(b => b.classList.remove("unit-active"));
-        btn.classList.add("unit-active");
+  _stepHint(unit) {
+    const step = this._qtyStep(unit);
+    const n = (this._hass?.language || "en").startsWith("pl") ? String(step).replace(".", ",") : String(step);
+    return `${this._t("step")} ${n} ${unit || this._t("pcs")}`;
+  }
+
+  _openEdit(item) {
+    if (this._edit && this._edit.uid === item.uid) return;
+    if (this._edit) this._saveEdit();
+    this._edit = {
+      uid: item.uid, name: item.name, qty: String(item.quantity), unit: item.unit || "",
+      category: item.category || "", notes: item.notes || "", catNew: false, fresh: true,
+    };
+    this._updateLists();
+  }
+
+  _closeEdit() { this._edit = null; this._updateLists(); }
+
+  async _saveEdit() {
+    const d = this._edit; if (!d) return;
+    this._edit = null;
+    const li = this._items.find(i => i.uid === d.uid);
+    if (!li) { this._updateLists(); return; }
+    const name = d.name.trim() || li.name;
+    const unit = d.unit || "";
+    let q = parseFloat(String(d.qty).replace(",", "."));
+    if (isNaN(q) || q <= 0) q = li.quantity;
+    q = Math.max(unit ? 0.1 : 1, Math.round(q * 100) / 100);
+    const notes = d.notes.replace(/\s*\n\s*/g, " ").trim();
+    const category = d.category.replace(/[\[\]]/g, "").trim();
+    const summary = formatSummary(name, q, notes, category, unit);
+    if (summary === li.summary) { this._updateLists(); return; }
+    clearTimeout(this._qtyTimers[d.uid]); delete this._qtyTimers[d.uid];
+    Object.assign(li, { name, quantity: q, unit, notes, category, summary });
+    this._updateLists();
+    await this._callService("update_item", { item: d.uid, rename: summary });
+    await this._fetchItems();
+  }
+
+  _htmlEditPanel(item) {
+    const d = this._edit;
+    const a = s => esc(s).replace(/"/g, "&quot;");
+    const cats = this._orderedCategories(d.category);
+    const known = cats.some(c => c === d.category);
+    const units = ["", "opk.", "kg", "dag", "g", "l", "ml"];
+    return `
+    <div class="item-wrap editing" data-uid="${item.uid}">
+      <div class="edit-panel">
+        <div>
+          <label class="ed-lbl">${this._t("ed_name")}</label>
+          <input class="ed-input ed-name" data-f="name" type="text" enterkeyhint="done" value="${a(d.name)}" />
+        </div>
+        <div>
+          <span class="ed-lbl">${this._t("ed_qty")}</span>
+          <div class="ed-qrow">
+            <div class="ed-step">
+              <button data-ed="minus" aria-label="-"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></button>
+              <input class="ed-qty" data-f="qty" type="number" inputmode="decimal" min="0.1" step="any" value="${a(d.qty)}" />
+              <button data-ed="plus" aria-label="+"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></button>
+            </div>
+            <span class="ed-hint">${esc(this._stepHint(d.unit))}</span>
+          </div>
+          <div class="ed-chips ed-units">${units.map(u =>
+            `<button class="ed-chip${u === d.unit ? " on" : ""}" data-unit="${u}">${esc(u || this._t("pcs"))}</button>`).join("")}</div>
+        </div>
+        <div>
+          <span class="ed-lbl">${this._t("category")}</span>
+          <div class="ed-chips ed-cats">${cats.map(c =>
+            `<button class="ed-chip${c === d.category ? " on" : ""}" data-cat="${a(c)}">${esc(c)}</button>`).join("")}<button class="ed-chip dash" data-ed="cat-new">${this._t("ed_new_category")}</button></div>
+          <input class="ed-input ed-cat-new" data-f="cat" type="text" enterkeyhint="done" placeholder="${this._t("new_category")}" value="${d.catNew && !known ? a(d.category) : ""}" style="${d.catNew ? "" : "display:none"}" />
+        </div>
+        <div>
+          <label class="ed-lbl">${this._t("ed_note")}</label>
+          <textarea class="ed-input ed-note" data-f="note" rows="1" placeholder="${this._t("add_note_placeholder")}">${esc(d.notes)}</textarea>
+        </div>
+        <div class="ed-acts">
+          <button class="ed-btn ed-del"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M19 4h-3.5l-1-1h-5l-1 1H5v2h14M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>${this._t("remove")}</button>
+          <button class="ed-btn ed-ok">${this._t("ed_done")}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  _bindEditPanel(el, item) {
+    const d = this._edit, p = el.querySelector(".edit-panel");
+    if (!d || !p) return;
+    const nameI = p.querySelector(".ed-name"), qtyI = p.querySelector(".ed-qty");
+    const noteI = p.querySelector(".ed-note"), catI = p.querySelector(".ed-cat-new");
+    const hint = p.querySelector(".ed-hint");
+    nameI.addEventListener("input", () => { d.name = nameI.value; });
+    qtyI.addEventListener("input", () => { d.qty = qtyI.value; });
+    noteI.addEventListener("input", () => { d.notes = noteI.value; });
+    catI.addEventListener("input", () => {
+      d.category = catI.value.trim();
+      p.querySelectorAll(".ed-cats [data-cat]").forEach(c => c.classList.toggle("on", c.dataset.cat === d.category));
+    });
+    p.addEventListener("keydown", e => {
+      if (e.key === "Escape") { e.preventDefault(); this._closeEdit(); }
+      else if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); this._saveEdit(); }
+    });
+    const bump = dir => {
+      const step = this._qtyStep(d.unit);
+      const cur = parseFloat(String(d.qty).replace(",", ".")) || 0;
+      const nv = Math.max(d.unit ? 0.1 : 1, Math.round((cur + dir * step) * 100) / 100);
+      d.qty = String(nv); qtyI.value = d.qty;
+    };
+    p.querySelector('[data-ed="minus"]').addEventListener("click", () => bump(-1));
+    p.querySelector('[data-ed="plus"]').addEventListener("click", () => bump(1));
+    p.querySelectorAll(".ed-units .ed-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        d.unit = chip.dataset.unit;
+        p.querySelectorAll(".ed-units .ed-chip").forEach(c => c.classList.toggle("on", c === chip));
+        hint.textContent = this._stepHint(d.unit);
       });
     });
-    let done = false;
-    const save = () => {
-      if (done) return; done = true;
-      const q = parseFloat(inp.value);
-      if (!isNaN(q) && q > 0) this._updateQuantity(item, q, selectedUnit);
-      else this._updateLists();
-    };
-    inp.addEventListener("blur", () => setTimeout(save, 150));
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); save(); } });
-  }
-
-  _toggleNoteEditor(wrap, item) {
-    const ed = wrap.querySelector(".note-editor"); if (!ed) return;
-    const open = ed.style.display !== "none";
-    // Close category editor if open
-    const catEd = wrap.querySelector(".cat-editor");
-    if (catEd) catEd.style.display = "none";
-    ed.style.display = open ? "none" : "";
-    if (!open) {
-      const ta = ed.querySelector(".note-textarea");
-      ta.focus();
-      const save = () => {
-        const v = ta.value;
-        if (v !== (item.notes || "")) this._updateNotes(item, v);
-        else ed.style.display = "none";
-      };
-      const btn = ed.querySelector(".note-save");
-      const nb = btn.cloneNode(true); btn.replaceWith(nb);
-      nb.addEventListener("click", save);
-      ta.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } };
-    }
-  }
-
-  _toggleCategoryEditor(wrap, item) {
-    const ed = wrap.querySelector(".cat-editor"); if (!ed) return;
-    const open = ed.style.display !== "none";
-    // Close note editor if open
-    const noteEd = wrap.querySelector(".note-editor");
-    if (noteEd) noteEd.style.display = "none";
-    ed.style.display = open ? "none" : "";
-    if (!open) {
-      const cats = this._getCategories();
-      const chipsEl = ed.querySelector(".cat-chips");
-      chipsEl.innerHTML = cats.map(c =>
-        `<span class="cat-chip${c === item.category ? ' cat-chip-active' : ''}" data-cat="${esc(c)}">${esc(c)}</span>`
-      ).join("");
-
-      const inp = ed.querySelector(".cat-input");
-      inp.value = item.category || "";
-      setTimeout(() => inp.focus(), 50);
-
-      // Bind chip clicks
-      chipsEl.querySelectorAll(".cat-chip").forEach(chip => {
-        chip.addEventListener("click", () => {
-          const cat = chip.dataset.cat;
-          if (cat === item.category) {
-            this._updateCategory(item, "");
-          } else {
-            this._updateCategory(item, cat);
-          }
-          ed.style.display = "none";
-        });
+    p.querySelectorAll(".ed-cats [data-cat]").forEach(chip => {
+      chip.addEventListener("click", () => {
+        d.category = chip.dataset.cat === d.category ? "" : chip.dataset.cat;
+        p.querySelectorAll(".ed-cats [data-cat]").forEach(c => c.classList.toggle("on", c.dataset.cat === d.category));
+        catI.value = "";
       });
-
-      // Save button
-      const saveBtn = ed.querySelector(".cat-save");
-      const newSave = saveBtn.cloneNode(true); saveBtn.replaceWith(newSave);
-      newSave.addEventListener("click", () => {
-        this._updateCategory(item, inp.value.trim());
-        ed.style.display = "none";
-      });
-      inp.onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); newSave.click(); } };
-
-      // Remove button
-      const removeBtn = ed.querySelector(".cat-remove");
-      if (removeBtn) {
-        const newRemove = removeBtn.cloneNode(true); removeBtn.replaceWith(newRemove);
-        newRemove.addEventListener("click", () => {
-          this._updateCategory(item, "");
-          ed.style.display = "none";
-        });
-      }
+    });
+    p.querySelector('[data-ed="cat-new"]').addEventListener("click", () => {
+      d.catNew = !d.catNew;
+      catI.style.display = d.catNew ? "" : "none";
+      if (d.catNew) catI.focus();
+    });
+    p.querySelector(".ed-del").addEventListener("click", () => this._showDeleteConfirm(item, el, null, null));
+    p.querySelector(".ed-ok").addEventListener("click", () => this._saveEdit());
+    if (d.fresh) {
+      d.fresh = false;
+      requestAnimationFrame(() => { try { p.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (_) {} });
     }
   }
 
@@ -1558,23 +1621,36 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   static get CSS() {
     return `
-      :host { --R: var(--ha-card-border-radius, 12px); }
+      :host {
+        --R: var(--ha-card-border-radius, 12px);
+        --T: 18px;
+        --esl-card: var(--ha-card-background, var(--card-background-color, #fff));
+      }
       ha-card { overflow: visible; }
+      .esl-w { container-type: inline-size; }
+      .esl-in { margin: 0 auto; }
+      button { font-family: inherit; }
+
+      /* --- header --- */
       .header {
-        padding: 16px 20px 4px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-        position: relative;
+        position: relative; display: flex; align-items: center; gap: 6px;
+        padding: 16px 8px 10px 16px;
       }
+      .header-main { flex: 1; min-width: 0; }
       .header-title {
-        font-size: 20px; font-weight: 500; color: var(--primary-text-color);
-        background: none; border: none; cursor: pointer; padding: 0;
-        display: flex; align-items: center; gap: 4px; font-family: inherit;
+        max-width: 100%; font-size: 22px; font-weight: 800; letter-spacing: -.02em;
+        color: var(--primary-text-color); background: none; border: none; cursor: pointer; padding: 0;
+        display: flex; align-items: center; gap: 2px; text-align: left;
       }
+      .header-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .header-title:hover { color: var(--primary-color); }
-      .entity-switch-arrow { opacity: .4; transition: opacity .15s; }
-      .header-title:hover .entity-switch-arrow { opacity: .8; }
+      .entity-switch-arrow { flex: none; opacity: .5; transition: opacity .15s; }
+      .header-title:hover .entity-switch-arrow { opacity: .9; }
+      .header-sub { font-size: 14px; color: var(--secondary-text-color); margin-top: 2px; }
+      .header-sub b { color: var(--primary-text-color); font-weight: 700; }
       .entity-switch-dropdown {
         position: absolute; top: 100%; left: 16px; z-index: 20;
-        background: var(--card-background-color, #fff);
+        background: var(--esl-card);
         border: 2px solid var(--primary-color); border-radius: 12px;
         box-shadow: 0 8px 24px rgba(0,0,0,.25); overflow: hidden;
         min-width: 200px; max-height: 300px; overflow-y: auto;
@@ -1583,7 +1659,6 @@ class EnhancedShoppingListCard extends HTMLElement {
         display: block; width: 100%; text-align: left; padding: 12px 16px;
         border: none; background: transparent; color: var(--primary-text-color);
         font-size: 15px; cursor: pointer; transition: background .12s;
-        font-family: inherit;
       }
       .entity-switch-item:hover { background: var(--secondary-background-color, #f5f5f5); }
       .entity-switch-active {
@@ -1593,7 +1668,45 @@ class EnhancedShoppingListCard extends HTMLElement {
       .entity-switch-item + .entity-switch-item {
         border-top: 1px solid var(--divider-color, rgba(127,127,127,.15));
       }
-      .header-toggles { display: flex; gap: 2px; flex-shrink: 0; }
+      .store-mode-btn {
+        flex: none; display: flex; align-items: center; gap: 8px; height: 46px;
+        padding: 0 14px 0 12px; border: none; border-radius: 23px; cursor: pointer;
+        background: var(--primary-color); color: var(--text-primary-color, #fff);
+        font-size: 15px; font-weight: 700; transition: filter .15s, transform .15s;
+      }
+      .store-mode-btn:hover { filter: brightness(1.08); }
+      .store-mode-btn:active { transform: scale(.96); }
+      .menu-btn {
+        flex: none; width: 44px; height: 44px; border: none; border-radius: 22px; padding: 0;
+        background: none; color: var(--secondary-text-color); cursor: pointer;
+        display: grid; place-items: center; transition: background .15s;
+      }
+      .menu-btn:hover, .menu-btn.menu-open { background: rgba(128,128,128,.15); color: var(--primary-text-color); }
+      .header-menu {
+        position: absolute; top: calc(100% - 4px); right: 8px; z-index: 20;
+        width: 300px; max-width: calc(100% - 16px); box-sizing: border-box; padding: 6px;
+        background: var(--esl-card); border: 1px solid var(--divider-color, rgba(127,127,127,.25));
+        border-radius: var(--T); box-shadow: 0 12px 32px rgba(0,0,0,.28);
+      }
+      .menu-row {
+        display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px;
+        padding: 0 12px; border: none; background: none; border-radius: 12px;
+        font-size: 15px; color: var(--primary-text-color); text-align: left; cursor: pointer;
+      }
+      .menu-row:hover { background: rgba(128,128,128,.12); }
+      .menu-row svg { flex: none; color: var(--secondary-text-color); }
+      .menu-row .ml { flex: 1; min-width: 0; }
+      .menu-sw {
+        flex: none; width: 40px; height: 24px; border-radius: 12px; position: relative;
+        background: var(--disabled-text-color, #999); transition: background .15s;
+      }
+      .menu-sw::after {
+        content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+        border-radius: 50%; background: #fff; transition: left .15s;
+      }
+      .menu-row.hdr-on .menu-sw { background: var(--primary-color); }
+      .menu-row.hdr-on .menu-sw::after { left: 19px; }
+      .menu-sep { height: 1px; margin: 6px 12px; background: var(--divider-color, rgba(127,127,127,.25)); }
       .hdr-toggle {
         background: none; border: none; padding: 6px; cursor: pointer;
         border-radius: 8px; display: flex; align-items: center; justify-content: center;
@@ -1601,138 +1714,128 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .hdr-toggle:hover { background: rgba(128,128,128,.12); opacity: .8; }
       .hdr-toggle.hdr-on { color: var(--primary-color); opacity: 1; }
-      .store-mode-btn { opacity: 1 !important; padding: 5px; margin-right: 2px; color: #b71c1c !important; }
-      .store-mode-btn:hover { color: #e53935 !important; }
       .hdr-toggle-sm { padding: 4px; }
       .hdr-toggle-sm svg { width: 14px; height: 14px; }
       .done-toggles { display: flex; align-items: center; gap: 1px; flex-shrink: 0; }
-      .content { padding: 8px 12px 12px; }
+      .content { padding: 0 12px 12px; }
+      .main-col { display: flex; flex-direction: column; min-width: 0; }
 
-      /* --- add --- */
+      /* --- add (docked to the bottom on narrow cards) --- */
       .add-section {
-        position: relative; margin-bottom: 14px; padding: 10px;
-        border: 1.5px solid var(--divider-color, rgba(127,127,127,.25));
-        border-radius: var(--R); background: var(--secondary-background-color, rgba(127,127,127,.06));
+        order: 9; position: sticky; bottom: 0; z-index: 5;
+        margin: 4px -12px 0; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+        background: var(--esl-card); box-shadow: 0 -8px 20px rgba(0,0,0,.08);
+        border-radius: 0 0 var(--R) var(--R);
       }
       .input-row { display: flex; align-items: center; gap: 10px; }
+      .add-field {
+        flex: 1; min-width: 0; display: flex; align-items: center; height: 54px; box-sizing: border-box;
+        padding: 0 4px 0 20px; border-radius: 27px; border: 2.5px solid transparent;
+        background: var(--secondary-background-color, rgba(127,127,127,.1)); transition: border-color .2s, background .2s;
+      }
+      .add-field:focus-within { border-color: var(--primary-color); background: var(--esl-card); }
       .add-input {
-        flex:1; padding: 13px 16px; border: 2px solid var(--divider-color,#ddd); border-radius: var(--R);
-        background: var(--card-background-color,#fff); color: var(--primary-text-color);
-        font-size: 16px; font-family: inherit; outline: none; transition: border-color .2s;
+        flex: 1; min-width: 0; height: 100%; padding: 0; border: none; background: none;
+        color: var(--primary-text-color); font-size: 17px; font-family: inherit; outline: none;
       }
-      .add-input:focus { border-color: var(--primary-color); }
-      .add-input::placeholder { color: var(--secondary-text-color); opacity: .6; }
+      .add-input::placeholder { color: var(--secondary-text-color); opacity: .8; }
       .add-cat-btn {
-        background: none; border: 1.5px solid var(--divider-color,#ddd); padding: 0; cursor: pointer; display: flex;
-        align-items: center; justify-content: center; width: 40px; height: 40px;
-        flex-shrink: 0; border-radius: var(--R); transition: all .15s;
+        flex: none; width: 44px; height: 44px; padding: 0; border: none; border-radius: 22px;
+        background: none; cursor: pointer; display: grid; place-items: center; transition: background .15s;
       }
-      .add-cat-btn:hover { border-color: var(--primary-color); }
-      .add-cat-btn.add-cat-active {
-        border-color: var(--primary-color); background: rgba(var(--esl-active-rgb), 0.15);
-      }
+      .add-cat-btn:hover { background: rgba(128,128,128,.15); }
+      .add-cat-btn.add-cat-active { background: rgba(var(--esl-active-rgb), 0.15); }
       .add-cat-btn.add-cat-active svg path, .add-cat-btn.add-cat-active svg circle {
         stroke: var(--primary-color); fill: var(--primary-color);
       }
       .pending-cat-bar {
-        display: flex; align-items: center; gap: 6px; padding: 4px 8px; margin-top: 4px;
-        font-size: 12px; color: var(--primary-color); font-weight: 600;
+        display: flex; align-items: center; gap: 6px; padding: 6px 8px 0;
+        font-size: 13px; color: var(--primary-color); font-weight: 700;
       }
       .pending-cat-clear {
-        background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1;
-        color: var(--secondary-text-color); padding: 0 4px; font-weight: 700;
+        background: none; border: none; cursor: pointer; font-size: 18px; line-height: 1;
+        color: var(--secondary-text-color); padding: 4px 8px; font-weight: 700;
       }
       .pending-cat-clear:hover { color: var(--error-color, #e53935); }
-      .add-cat-picker {
-        padding: 10px 0 4px; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
-        margin-bottom: 4px;
-      }
+      .add-cat-picker { padding: 10px 0 0; }
       .add-btn {
-        background: none; border: none; padding: 0; cursor: pointer; display: flex;
-        align-items: center; justify-content: center; width: 40px; height: 40px;
-        flex-shrink: 0; border-radius: 50%; transition: transform .15s;
+        flex: none; width: 54px; height: 54px; padding: 0; border: none; border-radius: 27px; cursor: pointer;
+        display: grid; place-items: center; background: var(--primary-color); color: var(--text-primary-color, #fff);
+        transition: transform .15s;
       }
-      .add-btn:hover { transform: scale(1.08); }
+      .add-btn:hover { transform: scale(1.06); }
       .add-btn:active { transform: scale(.92); }
-      .add-btn-pulse {
-        animation: esl-pulse 1.5s ease-in-out infinite;
-      }
+      .add-btn-pulse { animation: esl-pulse 1.5s ease-in-out infinite; }
       @keyframes esl-pulse {
         0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.15); filter: brightness(1.2); }
+        50% { transform: scale(1.12); filter: brightness(1.2); }
       }
 
-      /* --- suggestions --- */
+      /* --- suggestions (open upward from the docked field) --- */
       .suggestions {
-        position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
-        background: var(--secondary-background-color, #f5f5f5);
-        border: 2px solid var(--primary-color); border-top: none;
-        border-radius: 0 0 var(--R) var(--R);
-        box-shadow: 0 8px 24px rgba(0,0,0,.25); overflow: hidden;
+        position: absolute; left: 12px; right: 12px; bottom: 100%; z-index: 10;
+        display: flex; flex-direction: column-reverse; gap: 6px; padding: 8px;
+        max-height: min(440px, 55vh); overflow-y: auto; box-sizing: border-box;
+        background: var(--esl-card); border: 1px solid var(--divider-color, rgba(127,127,127,.25));
+        border-radius: var(--T); box-shadow: 0 -8px 28px rgba(0,0,0,.22);
       }
       .sg-item {
-        padding: 16px 16px; cursor: pointer; display: flex; align-items: center; gap: 12px;
-        font-size: 19px; transition: background .12s; min-height: 56px; box-sizing: border-box;
-        border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.2));
+        flex: none; padding: 0 12px 0 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;
+        font-size: 17px; min-height: 52px; box-sizing: border-box; border-radius: 14px;
+        background: var(--secondary-background-color, rgba(127,127,127,.1)); transition: background .12s;
       }
-      .sg-item:last-child { border-bottom: none; }
-      .sg-item:hover, .sg-item:active { background: rgba(var(--esl-active-rgb), 0.18); }
-      .sg-check { flex-shrink: 0; opacity: 0.85; }
-      .sg-name { flex: 1; font-weight: 500; }
+      .sg-item:hover, .sg-item:active { background: rgba(var(--esl-active-rgb), 0.22); }
+      .sg-check { flex-shrink: 0; opacity: 0.9; }
+      .sg-name { flex: 1 1 auto; min-width: 40%; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sg-badge {
-        font-size: 11px; padding: 2px 8px; border-radius: 10px;
-        background: var(--primary-color); color: #fff; white-space: nowrap;
+        flex: none; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 10px;
+        background: var(--primary-text-color); color: var(--esl-card); white-space: nowrap;
       }
-      .sg-done { background: var(--disabled-text-color,#999); }
+      .sg-done { background: none; color: var(--secondary-text-color); font-weight: 600; padding: 3px 0; }
       .sg-cat {
-        font-size: 11px; padding: 2px 6px; border-radius: 6px;
-        background: rgba(var(--esl-active-rgb), 0.15); color: var(--secondary-text-color);
-        white-space: nowrap;
+        flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+        font-size: 12px; color: var(--secondary-text-color); white-space: nowrap;
       }
 
       /* --- sections --- */
       .section { margin-bottom: 8px; }
       .section-title {
-        font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px;
-        color: var(--secondary-text-color); padding: 10px 0 6px; display: flex; align-items: center; gap: 6px;
+        font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+        color: var(--secondary-text-color); padding: 14px 6px 8px; display: flex; align-items: center; gap: 6px;
       }
       .badge-count {
         display: inline-flex; align-items: center; justify-content: center;
         min-width: 20px; height: 20px; border-radius: 10px; padding: 0 6px;
-        font-size: 11px; font-weight: 700; background: var(--primary-color); color: #fff;
+        font-size: 11px; font-weight: 700; letter-spacing: 0;
+        background: var(--secondary-background-color, rgba(127,127,127,.15)); color: var(--primary-text-color);
       }
-      .empty-msg { padding: 24px 0; text-align: center; color: var(--secondary-text-color); font-size: 14px; opacity: .6; }
+      .empty-msg { padding: 32px 0; text-align: center; color: var(--secondary-text-color); font-size: 16px; }
 
       /* --- category group headers --- */
       .cat-header {
-        display: flex; align-items: center; gap: 6px;
-        font-size: 13px; font-weight: 600; color: var(--primary-color);
-        padding: 14px 4px 6px; letter-spacing: .3px;
+        display: flex; align-items: center; gap: 8px;
+        font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+        color: var(--primary-color); padding: 10px 6px 6px;
       }
-      .cat-header svg { opacity: .7; }
+      .cat-header-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .cat-header-emoji { font-size: 17px; letter-spacing: 0; margin-right: 8px; }
+      .cat-header-count { margin-left: auto; color: var(--secondary-text-color); font-weight: 700; letter-spacing: 0; }
       .cat-header-none { color: var(--secondary-text-color); }
       .active-list .cat-header:first-child { padding-top: 4px; }
 
       /* --- item tile --- */
-      .item-wrap {
-        position: relative; border-radius: var(--R); margin-bottom: 4px;
-      }
-      .item-wrap.esl-new {
-        animation: esl-slide-in .35s ease-out;
-      }
+      .item-wrap { position: relative; border-radius: var(--T); margin-bottom: 6px; }
+      .item-wrap.esl-new { animation: esl-slide-in .35s ease-out; }
       @keyframes esl-slide-in {
         from { opacity: 0; transform: translateY(-12px) scale(.97); max-height: 0; }
         to { opacity: 1; transform: translateY(0) scale(1); max-height: 120px; }
       }
-      .active-list .item-wrap:last-child,
       .completed-list .item-wrap:last-child { margin-bottom: 0; }
-      .swipe-row {
-        position: relative; border-radius: var(--R);
-      }
+      .swipe-row { position: relative; border-radius: var(--T); }
       .sw-bg {
         position: absolute; top: 0; bottom: 0; width: 100%;
         display: flex; align-items: center;
-        border-radius: var(--R);
+        border-radius: var(--T);
         opacity: 0; transition: opacity .15s;
       }
       .swipe-row.swiping-right .sw-right { opacity: 1; }
@@ -1744,82 +1847,80 @@ class EnhancedShoppingListCard extends HTMLElement {
         border-left: 2px dashed rgba(255,255,255,.5);
         transform: translateX(-1px);
       }
-      .sw-ready .sw-threshold-line {
-        border-left-color: rgba(255,255,255,.9);
-      }
+      .sw-ready .sw-threshold-line { border-left-color: rgba(255,255,255,.9); }
       .sw-left { right: 0; background: #e53935; justify-content: flex-end; padding-right: 18px; cursor: pointer; }
       .item {
-        position: relative; display: flex; align-items: center; gap: 8px;
-        padding: 6px 10px; min-height: 48px;
-        border-radius: var(--R);
+        position: relative; display: flex; align-items: center; gap: 10px;
+        min-height: 56px; box-sizing: border-box; padding: 6px 2px 6px 16px;
+        border-radius: var(--T);
         touch-action: pan-y; cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
       }
-      .active-list .item {
-        background-color: var(--esl-active-bg);
-      }
-      .completed-list .item {
-        background-color: var(--esl-done-bg);
-      }
+      .active-list .item { background-color: var(--esl-active-bg); }
+      .completed-list .item { background-color: var(--esl-done-bg); min-height: 48px; padding: 4px 6px 4px 12px; }
 
-      /* --- checkbox --- */
+      /* --- "bought" control --- */
       .chk {
-        width: 24px; height: 24px; min-width: 24px; border-radius: 50%;
-        border: 2px solid var(--divider-color,#ccc); cursor: pointer;
+        flex: none; width: 48px; height: 48px; margin: -4px 0; padding: 0; border: none; background: none;
+        display: grid; place-items: center; cursor: pointer; -webkit-tap-highlight-color: transparent;
+      }
+      .chk-ring {
+        display: block; width: 32px; height: 32px; box-sizing: border-box; border-radius: 50%;
+        border: 3px solid var(--esl-check); background: var(--esl-card);
+        transition: box-shadow .15s, transform .15s;
+      }
+      .chk:hover .chk-ring { box-shadow: inset 0 0 0 5px var(--esl-card), inset 0 0 0 16px var(--esl-check); }
+      .chk:active .chk-ring { transform: scale(.9); }
+      .chk-d {
+        flex: none; width: 24px; height: 24px; border-radius: 50%; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
-        transition: all .2s; flex-shrink: 0;
-      }
-      .chk:hover { border-color: var(--primary-color); transform: scale(1.1); }
-      .chk-inner {
-        width: 0; height: 0; border-radius: 50%;
-        background: var(--primary-color); transition: all .2s;
-      }
-      .chk:hover .chk-inner { width: 10px; height: 10px; }
-      .chk-done {
-        border-color: var(--primary-color); background: var(--primary-color);
+        background: var(--esl-check);
       }
 
       /* --- item body --- */
       .item-body { flex: 1; min-width: 0; }
-      .item-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
       .item-name {
-        flex: 1; min-width: 0;
-        font-size: 16px; font-weight: 500; color: var(--esl-text-color); cursor: pointer;
+        font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1.25;
+        color: var(--esl-text-color); overflow-wrap: anywhere;
+      }
+      .item-sub { display: flex; align-items: center; gap: 8px; margin-top: 2px; min-width: 0; }
+      .cat-badge {
+        flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis;
+        font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 8px;
+        background: rgba(128,128,128,.18); color: var(--secondary-text-color); white-space: nowrap;
+      }
+      .cat-badge-done { opacity: .7; }
+      .note-preview {
+        min-width: 0; font-size: 14px; color: var(--secondary-text-color);
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       }
-      .cat-badge {
-        font-size: 11px; padding: 2px 8px; border-radius: 8px;
-        background: rgba(var(--esl-active-rgb), 0.25);
-        color: var(--secondary-text-color); white-space: nowrap;
-        cursor: pointer; flex-shrink: 0;
-      }
-      .cat-badge:hover { opacity: .8; }
-      .cat-badge-done {
-        background: rgba(var(--esl-done-rgb), 0.25);
-        opacity: .6;
-      }
-      .note-preview {
-        font-size: 14px; font-weight: 400; color: var(--secondary-text-color);
-        opacity: .7; margin-top: 2px;
-        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
-      }
-      .done-name { text-decoration: line-through; opacity: .5; }
-      .done-note { opacity: .4; }
-      .done-qty { font-size: 13px; color: var(--secondary-text-color); opacity: .6; white-space: nowrap; margin-right: 4px; }
-      .completed-item { opacity: .7; }
+      .completed-list .item-name { font-size: 16px; font-weight: 600; letter-spacing: 0; }
+      .done-name { text-decoration: line-through; opacity: .55; }
+      .done-note { opacity: .6; }
+      .done-qty { font-size: 13px; color: var(--secondary-text-color); opacity: .7; white-space: nowrap; margin-right: 4px; }
+      .completed-item { opacity: .8; }
 
       /* --- quantity --- */
-      .qty-area { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-      .qty-btn {
-        width: 26px; height: 26px; border-radius: 50%; border: none; cursor: pointer;
-        display: flex; align-items: center; justify-content: center; padding: 0;
-        background: var(--primary-color); color: #fff;
-        transition: all .15s ease;
+      .qty-pill {
+        flex: none; height: 32px; padding: 0 12px; border-radius: 16px; display: grid; place-items: center;
+        font-size: 15px; font-weight: 800; white-space: nowrap; font-variant-numeric: tabular-nums;
+        background: var(--primary-text-color); color: var(--esl-card);
       }
-      .qty-btn:hover { opacity: .85; transform: scale(1.1); }
+      .qty-pill.one { background: none; color: var(--secondary-text-color); font-weight: 600; padding: 0 4px; }
+      .qty-area {
+        display: none; flex: none; align-items: center; height: 40px; border-radius: 20px;
+        background: var(--esl-card);
+      }
+      .qty-btn {
+        width: 40px; height: 40px; border-radius: 20px; border: none; cursor: pointer; padding: 0;
+        display: grid; place-items: center; background: none; color: var(--primary-color);
+        transition: background .15s;
+      }
+      .qty-btn:hover { background: rgba(128,128,128,.15); }
       .qty-btn:active { transform: scale(.9); }
       .qty-val {
-        min-width: 18px; text-align: center; font-size: 15px; font-weight: 700;
-        cursor: pointer; color: var(--esl-text-color); user-select: none;
+        min-width: 58px; text-align: center; font-size: 15px; font-weight: 800;
+        color: var(--primary-text-color); user-select: none; font-variant-numeric: tabular-nums;
       }
 
       /* --- icon buttons --- */
@@ -1827,94 +1928,100 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: none; border: none; padding: 4px; cursor: pointer;
         display: flex; align-items: center; justify-content: center;
         border-radius: 50%; transition: background .15s; flex-shrink: 0;
-        opacity: .65;
       }
-      .icon-btn:hover { background: rgba(128,128,128,.15); opacity: 1; }
-      .icon-btn.has-note, .icon-btn.has-cat { opacity: 1; }
-      .cat-btn { opacity: .55; }
-      .cat-btn.has-cat { opacity: 1; }
-      .del-btn { opacity: .5; }
+      .del-btn { width: 44px; height: 44px; opacity: .6; }
       .del-btn:hover { background: rgba(229,57,53,.15); opacity: 1; }
 
-      /* --- inline edit --- */
-      .inline-edit {
-        font-size: 15px; border: 1.5px solid var(--primary-color); border-radius: 6px;
-        padding: 4px 8px; background: var(--card-background-color,#fff); color: var(--primary-text-color);
-        font-family: inherit; outline: none; width: 100%; box-sizing: border-box;
+      /* --- edit panel (a tile grows into it) --- */
+      .edit-panel {
+        display: flex; flex-direction: column; gap: 14px; padding: 14px 14px 12px;
+        border-radius: var(--T); background: var(--esl-card);
+        border: 2.5px solid var(--primary-color); box-shadow: 0 8px 24px rgba(0,0,0,.14);
+        animation: fadeIn .18s ease;
       }
-      .qty-edit { width: 56px; text-align: center; -moz-appearance: textfield; }
-      .qty-edit::-webkit-inner-spin-button, .qty-edit::-webkit-outer-spin-button { -webkit-appearance: none; }
-      .qty-editor-panel { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-      .unit-picker {
-        display: flex; gap: 3px; flex-wrap: wrap; justify-content: center;
+      .ed-lbl {
+        display: block; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+        color: var(--secondary-text-color); margin-bottom: 6px;
       }
-      .unit-btn {
-        padding: 3px 8px; border: 1.5px solid var(--divider-color, #ddd); border-radius: 6px;
-        background: transparent; color: var(--secondary-text-color); font-size: 11px;
-        cursor: pointer; transition: all .12s; font-weight: 600;
+      .ed-input {
+        display: block; width: 100%; box-sizing: border-box; min-height: 48px; padding: 10px 14px;
+        border: 2px solid transparent; border-radius: 12px; outline: none;
+        background: var(--secondary-background-color, rgba(127,127,127,.1)); color: var(--primary-text-color);
+        font-size: 16px; font-family: inherit; transition: border-color .15s;
       }
-      .unit-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
-      .unit-active {
-        background: var(--primary-color); color: #fff !important;
-        border-color: var(--primary-color);
+      .ed-input:focus { border-color: var(--primary-color); }
+      .ed-name { font-size: 20px; font-weight: 700; }
+      .ed-note { resize: vertical; min-height: 48px; max-height: 140px; line-height: 1.35; }
+      .ed-qrow { display: flex; align-items: center; gap: 12px; }
+      .ed-step {
+        display: flex; align-items: center; border-radius: 26px;
+        background: var(--secondary-background-color, rgba(127,127,127,.1));
       }
+      .ed-step button {
+        width: 52px; height: 52px; border: none; border-radius: 26px; padding: 0; cursor: pointer;
+        display: grid; place-items: center;
+        background: var(--primary-text-color); color: var(--esl-card); transition: transform .12s;
+      }
+      .ed-step button:active { transform: scale(.9); }
+      .ed-qty {
+        width: 76px; height: 52px; border: none; outline: none; background: none; padding: 0;
+        text-align: center; font-size: 24px; font-weight: 800; font-family: inherit;
+        color: var(--primary-text-color); font-variant-numeric: tabular-nums; -moz-appearance: textfield;
+      }
+      .ed-qty::-webkit-inner-spin-button, .ed-qty::-webkit-outer-spin-button { -webkit-appearance: none; }
+      .ed-hint { font-size: 13px; color: var(--secondary-text-color); }
+      .ed-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+      .ed-units { margin-top: 10px; }
+      .ed-cats {
+        flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .ed-cats::-webkit-scrollbar { display: none; }
+      .ed-cats.ed-cats-all { flex-wrap: wrap; overflow: visible; }
+      .ed-chip {
+        flex: none; height: 40px; min-width: 40px; box-sizing: border-box; padding: 0 14px;
+        border: none; border-radius: 20px; cursor: pointer; white-space: nowrap;
+        background: var(--secondary-background-color, rgba(127,127,127,.1)); color: var(--primary-text-color);
+        font-size: 15px; font-weight: 600; transition: background .12s;
+      }
+      .ed-units .ed-chip { padding: 0 9px; }
+      .ed-chip.on { background: var(--primary-text-color); color: var(--esl-card); font-weight: 800; }
+      .ed-chip.dash { background: none; border: 2px dashed var(--divider-color, rgba(127,127,127,.4)); color: var(--primary-color); }
+      .ed-cat-new { margin-top: 8px; }
+      .ed-acts { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .ed-btn {
+        height: 48px; padding: 0 14px; border: none; border-radius: 24px; cursor: pointer;
+        display: flex; align-items: center; gap: 6px; background: none;
+        font-size: 15px; font-weight: 700; color: var(--primary-text-color);
+      }
+      .ed-del { color: var(--error-color, #e53935); }
+      .ed-del:hover { background: rgba(229,57,53,.12); }
+      .ed-ok { background: var(--primary-color); color: var(--text-primary-color, #fff); padding: 0 28px; }
+      .ed-ok:hover { filter: brightness(1.08); }
 
-      /* --- note editor --- */
-      .note-editor {
-        padding: 8px 14px 12px 52px;
-        background: transparent;
-      }
-      .note-textarea {
-        width: 100%; box-sizing: border-box; padding: 8px 10px;
-        border: 1.5px solid var(--divider-color,#ddd); border-radius: 8px;
-        background: var(--secondary-background-color,#f8f8f8); color: var(--primary-text-color);
-        font-size: 13px; font-family: inherit; outline: none;
-        resize: vertical; min-height: 40px; max-height: 120px; transition: border-color .2s;
-      }
-      .note-textarea:focus { border-color: var(--primary-color); }
-      .note-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-      .note-save {
-        padding: 6px 16px; border-radius: 8px; border: none; font-size: 13px;
-        cursor: pointer; font-weight: 600;
-        background: var(--primary-color); color: #fff; transition: opacity .15s;
-      }
-      .note-save:hover { opacity: .85; }
-
-      /* --- category editor --- */
-      .cat-editor {
-        padding: 8px 14px 12px 52px;
-        background: transparent;
-      }
-      .cat-chips {
-        display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;
-      }
+      /* --- category chips (picker in the add bar) --- */
+      .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; max-height: 136px; overflow-y: auto; }
       .cat-chip {
-        font-size: 13px; padding: 5px 12px; border-radius: 16px; cursor: pointer;
-        background: rgba(var(--esl-active-rgb), 0.15);
+        font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 18px; cursor: pointer;
+        background: var(--secondary-background-color, rgba(127,127,127,.1));
         color: var(--primary-text-color); transition: all .15s;
-        border: 1.5px solid transparent;
       }
       .cat-chip:hover { background: rgba(var(--esl-active-rgb), 0.30); }
-      .cat-chip-active {
-        background: var(--primary-color); color: #fff;
-        border-color: var(--primary-color);
-      }
+      .cat-chip-active { background: var(--primary-text-color); color: var(--esl-card); }
       .cat-input-row { display: flex; gap: 8px; align-items: center; }
       .cat-input {
-        flex: 1; padding: 8px 10px;
-        border: 1.5px solid var(--divider-color,#ddd); border-radius: 8px;
-        background: var(--secondary-background-color,#f8f8f8); color: var(--primary-text-color);
-        font-size: 13px; font-family: inherit; outline: none; transition: border-color .2s;
+        flex: 1; min-width: 0; padding: 10px 12px;
+        border: 2px solid transparent; border-radius: 12px;
+        background: var(--secondary-background-color, #f8f8f8); color: var(--primary-text-color);
+        font-size: 16px; font-family: inherit; outline: none; transition: border-color .2s;
       }
       .cat-input:focus { border-color: var(--primary-color); }
-      .cat-save, .cat-remove {
-        padding: 6px 14px; border-radius: 8px; border: none; font-size: 13px;
-        cursor: pointer; font-weight: 600; transition: opacity .15s; white-space: nowrap;
+      .cat-save {
+        padding: 0 16px; height: 44px; border-radius: 22px; border: none; font-size: 14px;
+        cursor: pointer; font-weight: 700; white-space: nowrap;
+        background: var(--primary-color); color: var(--text-primary-color, #fff);
       }
-      .cat-save { background: var(--primary-color); color: #fff; }
-      .cat-save:hover { opacity: .85; }
-      .cat-remove { background: rgba(229,57,53,.15); color: var(--error-color,#e53935); }
-      .cat-remove:hover { background: rgba(229,57,53,.25); }
+      .cat-save:hover { filter: brightness(1.08); }
 
       /* --- completed section --- */
       .completed-header {
@@ -1930,13 +2037,13 @@ class EnhancedShoppingListCard extends HTMLElement {
       .clear-all-btn:hover { background: var(--secondary-background-color,#f0f0f0); }
       .confirm-bar {
         display: flex; align-items: center; gap: 8px; padding: 12px 14px;
-        background: var(--secondary-background-color,#f5f5f5); border-radius: var(--R);
+        background: var(--secondary-background-color,#f5f5f5); border-radius: var(--T);
         margin-bottom: 8px; font-size: 14px;
       }
       .confirm-bar span { flex: 1; }
       .btn-yes, .btn-no {
-        padding: 6px 14px; border-radius: 8px; border: none; font-size: 13px;
-        cursor: pointer; font-weight: 600;
+        padding: 8px 16px; border-radius: 18px; border: none; font-size: 13px;
+        cursor: pointer; font-weight: 700;
       }
       .btn-yes { background: #e53935; color: #fff; }
       .btn-no { background: var(--divider-color,#ddd); color: var(--primary-text-color); }
@@ -1947,7 +2054,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       /* --- delete confirmation overlay --- */
       .delete-confirm {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(229,57,53,0.92); border-radius: var(--R);
+        background: rgba(229,57,53,0.94); border-radius: var(--T);
         display: flex; align-items: center; justify-content: center; gap: 10px;
         z-index: 10; animation: fadeIn .15s ease;
         padding: 0 12px; box-sizing: border-box;
@@ -1955,12 +2062,12 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .delete-confirm svg { flex-shrink: 0; }
       .dc-text {
-        color: #fff; font-size: 13px; font-weight: 500;
+        color: #fff; font-size: 14px; font-weight: 600;
         overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
         flex: 1; min-width: 0;
       }
       .dc-yes, .dc-no {
-        padding: 7px 16px; border-radius: 8px; border: none;
+        padding: 9px 16px; border-radius: 18px; border: none;
         font-size: 13px; font-weight: 700; cursor: pointer;
         white-space: nowrap; flex-shrink: 0; transition: opacity .12s;
       }
@@ -1970,49 +2077,52 @@ class EnhancedShoppingListCard extends HTMLElement {
       .dc-no:hover { background: rgba(255,255,255,.35); }
 
       /* --- compact size --- */
-      .size-compact .item { padding: 2px 8px; min-height: 36px; gap: 6px; }
-      .size-compact .item-name { font-size: 14px; }
-      .size-compact .chk { width: 20px; height: 20px; min-width: 20px; }
-      .size-compact .chk-done svg { width: 13px; height: 13px; }
-      .size-compact .qty-btn { width: 22px; height: 22px; }
-      .size-compact .qty-btn svg { width: 12px; height: 12px; }
-      .size-compact .qty-val { font-size: 13px; min-width: 14px; }
-      .size-compact .icon-btn { padding: 2px; }
-      .size-compact .icon-btn svg { width: 17px; height: 17px; }
-      .size-compact .item-wrap { margin-bottom: 2px; }
-      .size-compact .cat-badge { font-size: 10px; padding: 1px 6px; }
-      .size-compact .note-preview { font-size: 12px; }
-      .size-compact .cat-header { padding: 10px 4px 4px; font-size: 12px; }
-      .size-compact .done-qty { font-size: 12px; }
+      .size-compact .active-list .item { min-height: 46px; padding: 4px 0 4px 14px; gap: 8px; }
+      .size-compact .active-list .item-name { font-size: 17px; }
+      .size-compact .item-wrap { margin-bottom: 4px; }
+      .size-compact .chk { width: 44px; height: 44px; }
+      .size-compact .chk-ring { width: 28px; height: 28px; }
+      .size-compact .qty-pill { height: 28px; font-size: 14px; padding: 0 10px; }
+      .size-compact .note-preview { font-size: 13px; }
+      .size-compact .cat-header { padding: 8px 6px 4px; font-size: 12px; }
+      .size-compact .completed-list .item { min-height: 40px; }
+      .size-compact .completed-list .item-name { font-size: 14px; }
 
       /* --- comfortable size --- */
-      .size-comfortable .item { padding: 10px 14px; min-height: 58px; gap: 10px; }
-      .size-comfortable .item-name { font-size: 17px; }
-      .size-comfortable .chk { width: 28px; height: 28px; min-width: 28px; }
-      .size-comfortable .qty-btn { width: 30px; height: 30px; }
-      .size-comfortable .qty-btn svg { width: 16px; height: 16px; }
-      .size-comfortable .qty-val { font-size: 17px; min-width: 22px; }
-      .size-comfortable .icon-btn { padding: 6px; }
-      .size-comfortable .icon-btn svg { width: 22px; height: 22px; }
-      .size-comfortable .item-wrap { margin-bottom: 6px; }
-      .size-comfortable .cat-badge { font-size: 12px; padding: 3px 10px; }
+      .size-comfortable .active-list .item { min-height: 66px; padding: 8px 4px 8px 18px; }
+      .size-comfortable .active-list .item-name { font-size: 22px; }
+      .size-comfortable .item-wrap { margin-bottom: 8px; }
+      .size-comfortable .chk-ring { width: 36px; height: 36px; }
+      .size-comfortable .qty-pill { height: 36px; font-size: 16px; border-radius: 18px; }
       .size-comfortable .note-preview { font-size: 15px; }
-      .size-comfortable .cat-header { padding: 16px 4px 8px; font-size: 14px; }
-      .size-comfortable .done-qty { font-size: 14px; }
+      .size-comfortable .cat-header { padding: 14px 6px 8px; font-size: 14px; }
+      .size-comfortable .completed-list .item { min-height: 54px; }
+      .size-comfortable .completed-list .item-name { font-size: 17px; }
 
-      @media (max-width: 500px) {
-        .content { padding: 6px 8px 10px; }
-        .item { gap: 6px; padding: 4px 8px; }
-        .icon-btn { padding: 3px; }
-        .icon-btn svg { width: 18px; height: 18px; }
-        .qty-btn { width: 24px; height: 24px; }
-        .qty-btn svg { width: 12px; height: 12px; }
-        .cat-editor, .note-editor { padding-left: 36px; }
-        /* compact stays compact on mobile */
-        .size-compact .item { padding: 2px 6px; }
-        /* comfortable tones down slightly on mobile */
-        .size-comfortable .item { padding: 8px 10px; min-height: 52px; }
+      /* --- the card adapts to its own width, not the window's --- */
+      @container (max-width: 370px) {
+        .header-title { font-size: 19px; }
+        .store-mode-btn { padding: 0 12px 0 10px; gap: 6px; font-size: 14px; }
       }
+      @container (max-width: 340px) {
+        .store-mode-btn { width: 46px; padding: 0; justify-content: center; }
+        .store-mode-btn span { display: none; }
+      }
+      @container (min-width: 600px) {
+        .esl-in { max-width: 720px; }
+        .add-section { order: 0; position: relative; bottom: auto; margin: 0 0 6px; padding: 4px 0; box-shadow: none; border-radius: 0; background: none; }
+        .suggestions { left: 0; right: 0; top: 100%; bottom: auto; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
+        .qty-pill { display: none; }
+        .qty-area { display: flex; }
+        .ed-cats { flex-wrap: wrap; overflow: visible; }
+      }
+      @container (min-width: 1000px) {
+        .esl-in { max-width: 1160px; }
+        .cols.has-done { display: grid; grid-template-columns: minmax(0, 660px) minmax(0, 420px); gap: 40px; align-items: start; }
+      }
+      /* option: keep the add field above the list on every width */
+      .add-top .add-section { order: 0; position: relative; bottom: auto; margin: 0 0 6px; padding: 4px 0; box-shadow: none; border-radius: 0; background: none; }
+      .add-top .suggestions { left: 0; right: 0; top: 100%; bottom: auto; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
 
       /* --- store mode overlay --- */
       .store-overlay {
@@ -2450,6 +2560,10 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <input type="checkbox" id="esl-chk-notes" ${showNotes ? "checked" : ""} />
             <span class="check-label">${this._t("ed_show_notes")}</span>
           </div>
+          <div class="check-row" id="esl-chk-addtop-row">
+            <input type="checkbox" id="esl-chk-addtop" ${this._config.add_position === "top" ? "checked" : ""} />
+            <span class="check-label">${this._t("ed_add_top")}</span>
+          </div>
         </div>
         <div class="row">
           <label>${this._t("ed_item_size")}</label>
@@ -2528,7 +2642,12 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
       this._config = { ...this._config, show_notes: e.target.checked }; this._fire();
     });
     // Make entire row clickable
-    ["esl-chk-cat-row", "esl-chk-badge-row", "esl-chk-headers-row", "esl-chk-notes-row"].forEach(rowId => {
+    this.querySelector("#esl-chk-addtop").addEventListener("change", e => {
+      const c = { ...this._config };
+      if (e.target.checked) c.add_position = "top"; else delete c.add_position;
+      this._config = c; this._fire();
+    });
+    ["esl-chk-cat-row", "esl-chk-badge-row", "esl-chk-headers-row", "esl-chk-notes-row", "esl-chk-addtop-row"].forEach(rowId => {
       this.querySelector(`#${rowId}`).addEventListener("click", e => {
         if (e.target.type === "checkbox") return;
         const cb = this.querySelector(`#${rowId} input[type="checkbox"]`);
@@ -2742,7 +2861,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.18.3 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.19.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
