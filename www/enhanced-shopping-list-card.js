@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.19.0
+ * Enhanced Shopping List Card v2.20.0
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -82,6 +82,8 @@ const STRINGS = {
     store_done: "Wszystko kupione!",
     store_undo: "Cofnij",
     store_progress: "kupione",
+    store_left: "zostało",
+    store_of: "z",
     to_buy: "Do kupienia",
     bought: "Kupione",
     clear_bought: "Wyczyść kupione",
@@ -158,6 +160,8 @@ const STRINGS = {
     store_done: "All done!",
     store_undo: "Undo",
     store_progress: "done",
+    store_left: "left",
+    store_of: "of",
     to_buy: "To buy",
     bought: "Bought",
     clear_bought: "Clear bought",
@@ -353,6 +357,7 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   async _toggleComplete(item) {
     const s = item.status === "needs_action" ? "completed" : "needs_action";
+    clearTimeout(this._qtyTimers[item.uid]); delete this._qtyTimers[item.uid];
     if (s === "completed" && (item.quantity !== 1 || item.unit)) {
       const li = this._items.find(i => i.uid === item.uid);
       const name = li ? li.name : item.name;
@@ -585,6 +590,11 @@ class EnhancedShoppingListCard extends HTMLElement {
           <div class="section active-section">
             <div class="active-list"></div>
           </div>
+          <div class="undo-toast" style="display:none" role="status">
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="undo-text"></span>
+            <button class="undo-btn">${this._t("store_undo")}</button>
+          </div>
           </div>
           <div class="section completed-section" style="display:none">
             <div class="section-title completed-header">
@@ -625,7 +635,24 @@ class EnhancedShoppingListCard extends HTMLElement {
       clearTimeout(this._debounceTimer);
       this._debounceTimer = setTimeout(() => this._updateSuggestions(), 300);
     });
-    inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); this._addCurrentInput(); } });
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const pick = this._suggestions[this._sgIndex];
+        if (pick) this._selectSuggestion(pick.i); else this._addCurrentInput();
+      } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && this._suggestions.length) {
+        e.preventDefault();
+        const box = R.querySelector(".suggestions");
+        // The first suggestion is the one closest to the field, whichever way the list opens
+        const down = getComputedStyle(box).flexDirection === "column";
+        const step = (e.key === "ArrowDown") === down ? 1 : -1;
+        this._sgIndex = Math.max(-1, Math.min(this._suggestions.length - 1, (this._sgIndex ?? -1) + step));
+        box.querySelectorAll(".sg-item").forEach((el, n) => {
+          el.classList.toggle("sg-hl", n === this._sgIndex);
+          if (n === this._sgIndex) el.scrollIntoView({ block: "nearest" });
+        });
+      } else if (e.key === "Escape") { this._hideSuggestions(); }
+    });
     inp.addEventListener("blur", () => setTimeout(() => this._hideSuggestions(), 200));
     R.querySelector(".add-btn").addEventListener("click", () => this._addCurrentInput());
 
@@ -644,6 +671,8 @@ class EnhancedShoppingListCard extends HTMLElement {
       btn.addEventListener("click", () => this._toggleViewPref(btn.dataset.toggle));
     });
     R.querySelector(".menu-btn").addEventListener("click", () => this._toggleHeaderMenu());
+    R.querySelector(".undo-btn").addEventListener("click", () => this._undoClick());
+    this._renderUndo();
     R.querySelector(".completed-header").addEventListener("click", e => {
       if (e.target.closest(".clear-all-btn") || e.target.closest(".hdr-toggle")) return;
       this._completedExpanded = !this._completedExpanded;
@@ -663,7 +692,7 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   _hideSuggestions() {
-    this._suggestions = [];
+    this._suggestions = []; this._sgIndex = -1;
     const s = this.shadowRoot.querySelector(".suggestions");
     if (s) s.style.display = "none";
   }
@@ -837,29 +866,31 @@ class EnhancedShoppingListCard extends HTMLElement {
 
   /* ---------- store mode ---------- */
 
-  _enterStoreMode() {
+  _enterStoreMode(isRefresh) {
     // Track totals for progress bar
     if (this._storeTotalItems == null) {
       this._storeTotalItems = this._items.filter(i => i.status === "needs_action").length;
     }
     const active = this._sortItems(this._items.filter(i => i.status === "needs_action"));
-    const total = this._storeTotalItems;
+    const total = Math.max(this._storeTotalItems, active.length);
+    this._storeTotalItems = total;
     const done = total - active.length;
     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
     const overlay = document.createElement("div");
-    overlay.className = "store-overlay";
+    overlay.className = "store-overlay" + (isRefresh ? " store-open" : "");
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-label", this._t("store_mode"));
     const catEnabled = this._getViewPref("show_categories");
     const showHeaders = this._getViewPref("show_category_headers");
     const showBadge = this._getViewPref("show_category_badge");
+    const showNotes = this._getViewPref("show_notes");
+    const hasAnyCat = catEnabled && active.some(i => i.category);
 
-    // Count items per category for headers
     const catCounts = {};
-    if (catEnabled && showHeaders) {
-      for (const item of active) {
-        const c = item.category || "";
-        catCounts[c] = (catCounts[c] || 0) + 1;
-      }
+    for (const item of active) {
+      const c = item.category || "";
+      catCounts[c] = (catCounts[c] || 0) + 1;
     }
 
     let listHtml = "";
@@ -870,17 +901,16 @@ class EnhancedShoppingListCard extends HTMLElement {
       </div>`;
     } else {
       let lastCat = null;
+      const checkColor = this._config.check_color || "var(--primary-color)";
       for (const item of active) {
-        if (catEnabled && showHeaders && item.category !== lastCat) {
-          const catLabel = item.category || this._t("other");
-          const count = catCounts[item.category || ""] || 0;
-          listHtml += `<div class="store-cat-header"><svg viewBox="0 0 24 24" width="16" height="16"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg> ${esc(catLabel)} <span class="store-cat-count">(${count})</span></div>`;
-          lastCat = item.category;
+        const cat = item.category || "";
+        if (hasAnyCat && showHeaders && cat !== lastCat) {
+          listHtml += `<div class="cat-header${cat ? "" : " cat-header-none"}"><span class="cat-header-name">${this._catLabelHtml(cat)}</span><span class="cat-header-count">${catCounts[cat]}</span></div>`;
+          lastCat = cat;
         }
-        const catBadge = (item.category && catEnabled && showBadge) ? `<span class="store-badge">${esc(item.category)}</span>` : "";
-        const unitLabel = item.unit || this._t("pcs");
-        const qtyBadge = `<span class="store-qty">${item.quantity} ${esc(unitLabel)}</span>`;
-        const checkColor = this._config.check_color || "var(--primary-color)";
+        const catBadge = (item.category && catEnabled && showBadge) ? `<span class="cat-badge">${esc(item.category)}</span>` : "";
+        const note = (item.notes && showNotes) ? `<span class="note-preview">${esc(item.notes)}</span>` : "";
+        const one = item.quantity === 1 && !item.unit;
         listHtml += `<div class="store-item-wrap">
           <div class="store-sw-bg">
             <div class="store-sw-fill"></div>
@@ -888,38 +918,39 @@ class EnhancedShoppingListCard extends HTMLElement {
           </div>
           <div class="store-item" data-uid="${item.uid}">
             <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-            <span class="store-name">${esc(item.name)}</span>${catBadge}${qtyBadge}
+            <span class="store-body"><span class="store-name">${esc(item.name)}</span>${(catBadge || note) ? `<span class="item-sub">${catBadge}${note}</span>` : ""}</span>
+            <span class="qty-pill${one ? " one" : ""}">${item.quantity} ${esc(item.unit || this._t("pcs"))}</span>
           </div>
         </div>`;
       }
     }
 
     const storeSize = localStorage.getItem("esl_store_size") || this._config.store_item_size || "normal";
+    const szBtn = (sz, h, y) => `<button class="store-size-btn${storeSize === sz ? " store-size-active" : ""}" data-sz="${sz}" title="${this._t("ed_size_" + sz)}" aria-label="${this._t("ed_size_" + sz)}"><svg viewBox="0 0 24 24" width="18" height="18">${y.map(v => `<rect x="3" y="${v}" width="18" height="${h}" rx="1" fill="currentColor"/>`).join("")}</svg></button>`;
     overlay.innerHTML = `
       <div class="store-header">
-        <span class="store-title">${this._t("store_mode")}</span>
+        <button class="store-exit"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>${this._t("store_mode_exit")}</button>
+        <div class="store-left"><b>${active.length}</b><span><i>${this._t("store_left")} </i>${this._t("store_of")} ${total}</span></div>
         <div class="store-size-picker">
-          <button class="store-size-btn${storeSize === "compact" ? " store-size-active" : ""}" data-sz="compact"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="5" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="10.75" width="18" height="2.5" rx="1" fill="currentColor"/><rect x="3" y="16.5" width="18" height="2.5" rx="1" fill="currentColor"/></svg></button>
-          <button class="store-size-btn${storeSize === "normal" ? " store-size-active" : ""}" data-sz="normal"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="4" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="10.5" width="18" height="3" rx="1" fill="currentColor"/><rect x="3" y="17" width="18" height="3" rx="1" fill="currentColor"/></svg></button>
-          <button class="store-size-btn${storeSize === "comfortable" ? " store-size-active" : ""}" data-sz="comfortable"><svg viewBox="0 0 24 24" width="18" height="18"><rect x="3" y="3" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="10" width="18" height="4" rx="1.5" fill="currentColor"/><rect x="3" y="17" width="18" height="4" rx="1.5" fill="currentColor"/></svg></button>
+          ${szBtn("compact", 2.5, [5, 10.75, 16.5])}${szBtn("normal", 3, [4, 10.5, 17])}${szBtn("comfortable", 4, [3, 10, 17])}
         </div>
-        <span class="store-counter">${active.length}</span>
-        <button class="store-exit">${this._t("store_mode_exit")}</button>
       </div>
-      <div class="store-progress-bar">
+      <div class="store-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}">
         <div class="store-progress-fill" style="width:${pct}%;background:${pct < 30 ? '#e53935' : pct < 60 ? '#ff9800' : pct < 90 ? '#ffc107' : '#4caf50'}"></div>
-        <span class="store-progress-text">${done}/${total} ${this._t("store_progress")} (${pct}%)</span>
       </div>
-      <div class="store-list store-sz-${storeSize}">${listHtml}</div>
-      <div class="store-undo-toast" style="display:none">
-        <span class="store-undo-text"></span>
-        <button class="store-undo-btn">${this._t("store_undo")}</button>
+      <div class="store-list store-sz-${storeSize}"><div class="store-in">${listHtml}</div></div>
+      <div class="undo-toast" style="display:none">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="undo-text"></span>
+        <button class="undo-btn">${this._t("store_undo")}</button>
       </div>`;
 
     this.shadowRoot.appendChild(overlay);
-    requestAnimationFrame(() => overlay.classList.add("store-open"));
+    if (!isRefresh) requestAnimationFrame(() => overlay.classList.add("store-open"));
 
     overlay.querySelector(".store-exit").addEventListener("click", () => this._exitStoreMode());
+    overlay.querySelector(".undo-btn").addEventListener("click", () => this._undoClick());
+    this._renderUndo();
 
     // Size picker
     overlay.querySelectorAll(".store-size-btn").forEach(btn => {
@@ -933,9 +964,10 @@ class EnhancedShoppingListCard extends HTMLElement {
       });
     });
 
-    // Auto-exit when all done
+    // Auto-exit when all done (cancelled if the last item is brought back)
+    clearTimeout(this._storeExitTimer);
     if (!active.length && total > 0) {
-      setTimeout(() => this._exitStoreMode(), 3500);
+      this._storeExitTimer = setTimeout(() => this._exitStoreMode(), 5500);
     }
 
     this._bindStoreSwipe(overlay);
@@ -1009,40 +1041,49 @@ class EnhancedShoppingListCard extends HTMLElement {
   }
 
   async _storeCompleteItem(item) {
-    await this._toggleComplete(item);
-    // Show undo toast
-    this._showStoreUndo(item);
+    await this._completeWithUndo(item);
     this._refreshStoreMode();
   }
 
-  _showStoreUndo(item) {
-    const overlay = this.shadowRoot.querySelector(".store-overlay");
-    if (!overlay) return;
-    const toast = overlay.querySelector(".store-undo-toast");
-    if (!toast) return;
-    clearTimeout(this._storeUndoTimer);
-    toast.querySelector(".store-undo-text").textContent = `✓ ${item.name}`;
-    toast.style.display = "flex";
-    const btn = toast.querySelector(".store-undo-btn");
-    const newBtn = btn.cloneNode(true); btn.replaceWith(newBtn);
-    newBtn.addEventListener("click", async () => {
-      toast.style.display = "none";
-      clearTimeout(this._storeUndoTimer);
-      // Find the completed item and revert
-      const completed = this._items.find(i => i.uid === item.uid && i.status === "completed");
-      if (completed) {
-        await this._toggleComplete(completed);
-        this._refreshStoreMode();
-      }
+  /* ---------- undo for "bought" ---------- */
+
+  async _completeWithUndo(item) {
+    const snap = { uid: item.uid, name: item.name, summary: item.summary };
+    await this._toggleComplete(item);
+    clearTimeout(this._undoTimer);
+    this._undo = snap;
+    this._renderUndo();
+    this._undoTimer = setTimeout(() => { this._undo = null; this._renderUndo(); }, 6000);
+  }
+
+  _renderUndo() {
+    const R = this.shadowRoot; if (!R) return;
+    R.querySelectorAll(".undo-toast").forEach(t => {
+      if (!this._undo) { t.style.display = "none"; return; }
+      t.querySelector(".undo-text").textContent = `${this._undo.name} · ${this._t("bought").toLowerCase()}`;
+      t.style.display = "flex";
     });
-    this._storeUndoTimer = setTimeout(() => { toast.style.display = "none"; }, 4000);
+  }
+
+  async _undoClick() {
+    const snap = this._undo; if (!snap) return;
+    clearTimeout(this._undoTimer);
+    this._undo = null;
+    this._renderUndo();
+    // Restore the item exactly as it was, including quantity and unit
+    await this._callService("update_item", { item: snap.uid, rename: snap.summary, status: "needs_action" });
+    await this._fetchItems();
+    this._refreshStoreMode();
   }
 
   _refreshStoreMode() {
     const overlay = this.shadowRoot.querySelector(".store-overlay");
     if (!overlay) return;
+    const top = overlay.querySelector(".store-list")?.scrollTop || 0;
     overlay.remove();
-    this._enterStoreMode();
+    this._enterStoreMode(true);
+    const list = this.shadowRoot.querySelector(".store-overlay .store-list");
+    if (list) list.scrollTop = top;
   }
 
   _exitStoreMode() {
@@ -1050,7 +1091,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     if (!overlay) return;
     overlay.classList.remove("store-open");
     this._storeTotalItems = null;
-    clearTimeout(this._storeUndoTimer);
+    clearTimeout(this._storeExitTimer);
     setTimeout(() => overlay.remove(), 250);
   }
 
@@ -1302,7 +1343,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         if (!a) { if (isCompleted) this._toggleComplete(item); else this._openEdit(item); return; }
         e.stopPropagation();
         switch (a.dataset.action) {
-          case "toggle": this._toggleComplete(item); break;
+          case "toggle": if (isCompleted) this._toggleComplete(item); else this._completeWithUndo(item); break;
           case "qty-minus": { const step = this._qtyStep(item.unit); this._updateQuantity(item, Math.round((item.quantity - step) * 100) / 100); break; }
           case "qty-plus": { const step = this._qtyStep(item.unit); this._updateQuantity(item, Math.round((item.quantity + step) * 100) / 100); break; }
           case "delete": this._showDeleteConfirm(item, el, itemEl, swipeRow); break;
@@ -1378,7 +1419,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           // Right swipe: complete
           itemEl.style.transform = "";
           swipeRow.className = "swipe-row"; resetSwBg();
-          this._toggleComplete(item);
+          this._completeWithUndo(item);
         } else if (off < -swThresh) {
           // Left swipe: show delete confirmation
           ts = null;
@@ -1588,7 +1629,7 @@ class EnhancedShoppingListCard extends HTMLElement {
     const scored = this._items.map(i => ({ i, s: fuzzyScore(q, i.name) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
     const seen = new Set(), uniq = [];
     for (const x of scored) { const k = stripDiacritics(x.i.name.toLowerCase()); if (!seen.has(k)) { seen.add(k); uniq.push(x); } }
-    this._suggestions = uniq.slice(0, 7);
+    this._suggestions = uniq.slice(0, 7); this._sgIndex = -1;
     if (!this._suggestions.length) { box.style.display = "none"; return; }
     box.style.display = "";
     box.innerHTML = this._suggestions.map(x => {
@@ -1599,6 +1640,15 @@ class EnhancedShoppingListCard extends HTMLElement {
       const checkIcon = `<svg class="sg-check" viewBox="0 0 24 24" width="22" height="22"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       return `<div class="sg-item" data-uid="${x.i.uid}">${checkIcon}<span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
     }).join("");
+    // Open downward whenever there is room under the field; upward only when the
+    // field is docked at the bottom edge of the screen.
+    box.classList.remove("sg-down"); box.style.maxHeight = "";
+    const fr = this.shadowRoot.querySelector(".add-section").getBoundingClientRect();
+    const below = window.innerHeight - fr.bottom - 8;
+    if (below >= Math.min(box.scrollHeight, 200) || below >= fr.top) {
+      box.classList.add("sg-down");
+      box.style.maxHeight = `${Math.max(120, Math.min(440, below))}px`;
+    }
     box.querySelectorAll(".sg-item").forEach(el => {
       el.addEventListener("mousedown", e => {
         e.preventDefault();
@@ -1779,12 +1829,16 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: var(--esl-card); border: 1px solid var(--divider-color, rgba(127,127,127,.25));
         border-radius: var(--T); box-shadow: 0 -8px 28px rgba(0,0,0,.22);
       }
+      .suggestions.sg-down { top: 100%; bottom: auto; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
       .sg-item {
         flex: none; padding: 0 12px 0 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;
         font-size: 17px; min-height: 52px; box-sizing: border-box; border-radius: 14px;
         background: var(--secondary-background-color, rgba(127,127,127,.1)); transition: background .12s;
       }
       .sg-item:hover, .sg-item:active { background: rgba(var(--esl-active-rgb), 0.22); }
+      .sg-item.sg-hl { background: var(--primary-text-color); color: var(--esl-card); }
+      .sg-item.sg-hl .sg-cat, .sg-item.sg-hl .sg-badge { color: inherit; background: none; opacity: .75; }
+      .sg-item.sg-hl .sg-check path { stroke: currentColor; }
       .sg-check { flex-shrink: 0; opacity: 0.9; }
       .sg-name { flex: 1 1 auto; min-width: 40%; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .sg-badge {
@@ -2124,10 +2178,34 @@ class EnhancedShoppingListCard extends HTMLElement {
       .add-top .add-section { order: 0; position: relative; bottom: auto; margin: 0 0 6px; padding: 4px 0; box-shadow: none; border-radius: 0; background: none; }
       .add-top .suggestions { left: 0; right: 0; top: 100%; bottom: auto; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
 
+      /* --- undo toast --- */
+      .undo-toast {
+        order: 8; position: sticky; bottom: 84px; z-index: 6; margin: 0 0 8px;
+        display: flex; align-items: center; gap: 10px; min-height: 56px; box-sizing: border-box;
+        padding: 0 8px 0 18px; border-radius: var(--T);
+        background: var(--primary-text-color); color: var(--esl-card);
+        box-shadow: 0 8px 24px rgba(0,0,0,.3); font-size: 16px; font-weight: 600;
+        animation: esl-toast-in .25s ease;
+      }
+      @keyframes esl-toast-in {
+        from { transform: translateY(16px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .undo-toast svg { flex: none; }
+      .undo-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .undo-btn {
+        flex: none; height: 44px; padding: 0 18px; border: none; border-radius: 22px; cursor: pointer;
+        font-size: 15px; font-weight: 800; background: var(--esl-card); color: var(--primary-text-color);
+      }
+      .add-top .undo-toast { bottom: 12px; }
+      @container (min-width: 600px) {
+        .undo-toast { bottom: 12px; width: 100%; max-width: 440px; align-self: center; }
+      }
+
       /* --- store mode overlay --- */
       .store-overlay {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
-        background: var(--primary-background-color, #111);
+        background: var(--esl-card);
         color: var(--primary-text-color, #fff);
         display: flex; flex-direction: column;
         opacity: 0; transition: opacity .25s ease;
@@ -2135,156 +2213,117 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .store-overlay.store-open { opacity: 1; }
       .store-header {
-        display: flex; align-items: center; gap: 12px;
-        padding: 16px 20px; flex-shrink: 0;
-        border-bottom: 2px solid var(--divider-color, rgba(127,127,127,.2));
-      }
-      .store-title {
-        font-size: 22px; font-weight: 700; flex: 1;
-      }
-      .store-size-picker {
-        display: flex; gap: 4px; background: rgba(127,127,127,.15);
-        border-radius: 8px; padding: 2px;
-      }
-      .store-size-btn {
-        padding: 6px 10px; border: none; border-radius: 6px; cursor: pointer;
-        background: transparent; color: var(--secondary-text-color);
-        transition: all .15s; display: flex; align-items: center;
-      }
-      .store-size-btn:hover { background: rgba(127,127,127,.15); }
-      .store-size-active {
-        background: var(--primary-color) !important; color: #fff !important;
-      }
-      .store-sz-compact .store-item { padding: 8px 12px; min-height: 36px; }
-      .store-sz-compact .store-item-wrap { margin: 2px 0; }
-      .store-sz-compact .store-name { font-size: 16px; }
-      .store-sz-compact .store-check svg { width: 22px; height: 22px; }
-      .store-sz-compact .store-cat-header { padding: 12px 8px 4px; font-size: 12px; }
-      .store-sz-comfortable .store-item { padding: 18px 16px; min-height: 64px; }
-      .store-sz-comfortable .store-item-wrap { margin: 6px 0; }
-      .store-sz-comfortable .store-name { font-size: 22px; }
-      .store-sz-comfortable .store-check svg { width: 32px; height: 32px; }
-      .store-counter {
-        font-size: 18px; font-weight: 700; padding: 4px 14px;
-        border-radius: 20px; background: var(--primary-color); color: #fff;
+        display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+        padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px;
       }
       .store-exit {
-        padding: 10px 24px; border-radius: 10px; border: 2px solid var(--divider-color,#555);
-        background: transparent; color: var(--primary-text-color); font-size: 16px;
-        font-weight: 600; cursor: pointer; transition: all .15s;
+        flex: none; height: 48px; padding: 0 18px 0 12px; border: none; border-radius: 24px; cursor: pointer;
+        display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 800;
+        background: var(--secondary-background-color, rgba(127,127,127,.15)); color: var(--primary-text-color);
       }
-      .store-exit:hover { border-color: var(--primary-color); color: var(--primary-color); }
+      .store-exit:hover { filter: brightness(.95); }
+      .store-left { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 8px; white-space: nowrap; }
+      .store-left b { font-size: 34px; font-weight: 800; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+      .store-left span { font-size: 14px; font-weight: 600; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; }
+      .store-left i { font-style: normal; }
+      .store-size-picker {
+        flex: none; display: flex; padding: 3px; border-radius: 24px;
+        background: var(--secondary-background-color, rgba(127,127,127,.15));
+      }
+      .store-size-btn {
+        width: 38px; height: 42px; padding: 0; border: none; border-radius: 21px; cursor: pointer;
+        background: transparent; color: var(--secondary-text-color);
+        display: grid; place-items: center; transition: all .15s;
+      }
+      .store-size-active { background: var(--primary-text-color) !important; color: var(--esl-card) !important; }
       .store-progress-bar {
-        position: relative; height: 36px; margin: 0 16px 10px;
-        background: rgba(127,127,127,.25); border-radius: 18px; overflow: hidden;
-        flex-shrink: 0; border: 2px solid rgba(127,127,127,.2);
+        position: relative; height: 10px; margin: 2px 16px 6px; flex-shrink: 0;
+        background: var(--secondary-background-color, rgba(127,127,127,.25)); border-radius: 5px; overflow: hidden;
       }
       .store-progress-fill {
         position: absolute; top: 0; left: 0; bottom: 0;
-        border-radius: 18px; transition: width .5s ease, background .5s ease;
-        min-width: 8px;
-      }
-      .store-progress-text {
-        position: absolute; inset: 0; display: flex; align-items: center;
-        justify-content: center; font-size: 13px; font-weight: 700;
-        color: var(--primary-text-color); text-shadow: 0 0 4px var(--primary-background-color, #000), 0 0 4px var(--primary-background-color, #000);
+        border-radius: 5px; transition: width .5s ease, background .5s ease;
+        min-width: 10px;
       }
       .store-list {
-        flex: 1; overflow-y: auto; padding: 8px 12px;
+        flex: 1; overflow-y: auto; padding: 0 12px 96px;
         -webkit-overflow-scrolling: touch;
       }
-      .store-cat-header {
-        display: flex; align-items: center; gap: 8px;
-        padding: 18px 8px 8px; font-size: 14px; font-weight: 700;
-        text-transform: uppercase; letter-spacing: .6px;
-        color: var(--secondary-text-color); opacity: .8;
-      }
-      .store-cat-count { font-weight: 400; opacity: .7; }
+      .store-in { max-width: 640px; margin: 0 auto; }
       .store-item-wrap {
-        position: relative; margin: 4px 0; border-radius: 14px; overflow: hidden;
+        position: relative; margin: 0 0 6px; border-radius: var(--T); overflow: hidden;
       }
       .store-sw-bg {
         position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-        border-radius: 14px; overflow: hidden; display: none;
+        border-radius: var(--T); overflow: hidden; display: none;
       }
       .store-swiping .store-sw-bg { display: block; }
       .store-sw-fill {
         position: absolute; top: 0; left: 0; bottom: 0; width: 0;
-        background: rgba(255, 152, 0, 0.4);
+        background: #ff9800;
         transition: none;
       }
-      .store-sw-ready .store-sw-fill {
-        background: rgba(76, 175, 80, 0.55);
-      }
+      .store-sw-ready .store-sw-fill { background: #43a047; }
       .store-sw-threshold {
         position: absolute; top: 0; bottom: 0;
         transform: translateX(-50%);
         display: flex; align-items: center; justify-content: center;
-        opacity: 0.3;
-        border-left: 2px dashed rgba(255,255,255,.4);
+        opacity: 0.45;
+        border-left: 2px dashed rgba(255,255,255,.6);
         padding-left: 8px;
       }
-      .store-sw-ready .store-sw-threshold {
-        opacity: 1;
-      }
-      .store-sw-ready .store-sw-threshold svg path {
-        stroke: #4caf50;
-      }
+      .store-sw-ready .store-sw-threshold { opacity: 1; }
       .store-item {
         position: relative;
-        display: flex; align-items: center; gap: 16px;
-        padding: 12px 16px; border-radius: 14px;
-        background: var(--esl-active-bg);
+        display: flex; align-items: center; gap: 12px;
+        padding: 8px 14px 8px 12px; border-radius: var(--T);
+        background-color: var(--esl-active-bg);
         cursor: pointer; transition: all .3s ease;
-        min-height: 48px; box-sizing: border-box;
+        min-height: 64px; box-sizing: border-box;
         user-select: none; -webkit-user-select: none;
-        border: 1.5px solid transparent;
-        touch-action: pan-y;
+        touch-action: pan-y; -webkit-tap-highlight-color: transparent;
       }
+      .store-swiping .store-item { background-image: linear-gradient(var(--esl-active-bg), var(--esl-active-bg)), linear-gradient(var(--esl-card), var(--esl-card)); }
       .store-check { flex-shrink: 0; display: flex; }
-      .store-name { flex: 1; font-size: 20px; font-weight: 500; }
-      .store-badge {
-        font-size: 12px; padding: 3px 10px; border-radius: 10px;
-        background: rgba(var(--esl-active-rgb), 0.25);
-        color: var(--secondary-text-color); white-space: nowrap;
+      .store-body { flex: 1; min-width: 0; display: block; }
+      .store-name {
+        display: block; font-size: 22px; font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
+        color: var(--esl-text-color); overflow-wrap: anywhere;
       }
-      .store-qty {
-        font-size: 14px; font-weight: 700; padding: 4px 12px;
-        border-radius: 10px; background: var(--primary-color); color: #fff;
-        white-space: nowrap;
-      }
+      .store-item .qty-pill { display: grid; height: 36px; font-size: 16px; border-radius: 18px; }
+      .store-item .note-preview { font-size: 15px; }
+      .store-sz-compact .store-item { min-height: 48px; padding: 4px 12px 4px 10px; gap: 10px; }
+      .store-sz-compact .store-item-wrap { margin-bottom: 4px; }
+      .store-sz-compact .store-name { font-size: 18px; }
+      .store-sz-compact .store-check svg { width: 22px; height: 22px; }
+      .store-sz-compact .store-item .qty-pill { height: 30px; font-size: 14px; }
+      .store-sz-compact .store-item .note-preview { font-size: 13px; }
+      .store-sz-compact .cat-header { padding: 8px 6px 4px; }
+      .store-sz-comfortable .store-item { min-height: 78px; padding: 12px 16px 12px 14px; }
+      .store-sz-comfortable .store-item-wrap { margin-bottom: 8px; }
+      .store-sz-comfortable .store-name { font-size: 25px; }
+      .store-sz-comfortable .store-check svg { width: 32px; height: 32px; }
+      .store-sz-comfortable .store-item .qty-pill { height: 40px; font-size: 18px; border-radius: 20px; }
+      .store-sz-comfortable .cat-header { padding: 14px 6px 8px; font-size: 14px; }
       .store-done {
         text-align: center; padding: 60px 20px;
-        font-size: 24px; font-weight: 600; opacity: .8;
+        font-size: 24px; font-weight: 700;
         display: flex; flex-direction: column; align-items: center; gap: 16px;
       }
-      .store-done svg {
-        animation: store-done-pop .5s ease;
-      }
+      .store-done svg { animation: store-done-pop .5s ease; }
       @keyframes store-done-pop {
         0% { transform: scale(0); } 50% { transform: scale(1.2); } 100% { transform: scale(1); }
       }
-      .store-undo-toast {
-        position: absolute; bottom: 24px; left: 20px; right: 20px;
-        display: flex; align-items: center; gap: 12px;
-        padding: 14px 18px; border-radius: 14px;
-        background: var(--card-background-color, #333);
-        box-shadow: 0 6px 24px rgba(0,0,0,.4);
-        font-size: 16px; font-weight: 500;
-        animation: store-toast-in .25s ease;
+      .store-overlay .undo-toast {
+        position: absolute; left: 12px; right: 12px; bottom: max(14px, env(safe-area-inset-bottom, 0px));
+        width: auto; max-width: 616px; margin: 0 auto; z-index: 5;
       }
-      @keyframes store-toast-in {
-        from { transform: translateY(20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
+      @media (max-width: 350px) {
+        .store-exit { padding: 0 12px 0 8px; }
+        .store-left b { font-size: 28px; }
+        .store-left i { display: none; }
+        .store-size-btn { width: 32px; }
       }
-      .store-undo-text { flex: 1; color: var(--primary-text-color); }
-      .store-undo-btn {
-        padding: 8px 20px; border-radius: 10px; border: none;
-        background: var(--primary-color); color: #fff;
-        font-size: 15px; font-weight: 700; cursor: pointer;
-        transition: opacity .15s;
-      }
-      .store-undo-btn:hover { opacity: .85; }
     `;
   }
 }
@@ -2861,7 +2900,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.19.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.20.0 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
