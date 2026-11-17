@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.19.0
+ * Enhanced Shopping List Card v2.19.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -1599,6 +1599,15 @@ class EnhancedShoppingListCard extends HTMLElement {
       const checkIcon = `<svg class="sg-check" viewBox="0 0 24 24" width="22" height="22"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       return `<div class="sg-item" data-uid="${x.i.uid}">${checkIcon}<span class="sg-name">${esc(x.i.name)}</span>${catInfo}${badge}</div>`;
     }).join("");
+    // Open downward whenever there is room under the field; upward only when the
+    // field is docked at the bottom edge of the screen.
+    box.classList.remove("sg-down"); box.style.maxHeight = "";
+    const fr = this.shadowRoot.querySelector(".add-section").getBoundingClientRect();
+    const below = window.innerHeight - fr.bottom - 8;
+    if (below >= Math.min(box.scrollHeight, 200) || below >= fr.top) {
+      box.classList.add("sg-down");
+      box.style.maxHeight = `${Math.max(120, Math.min(440, below))}px`;
+    }
     box.querySelectorAll(".sg-item").forEach(el => {
       el.addEventListener("mousedown", e => {
         e.preventDefault();
@@ -1779,6 +1788,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         background: var(--esl-card); border: 1px solid var(--divider-color, rgba(127,127,127,.25));
         border-radius: var(--T); box-shadow: 0 -8px 28px rgba(0,0,0,.22);
       }
+      .suggestions.sg-down { top: 100%; bottom: auto; flex-direction: column; box-shadow: 0 8px 28px rgba(0,0,0,.22); }
       .sg-item {
         flex: none; padding: 0 12px 0 14px; cursor: pointer; display: flex; align-items: center; gap: 10px;
         font-size: 17px; min-height: 52px; box-sizing: border-box; border-radius: 14px;
@@ -2861,7 +2871,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.19.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.19.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
