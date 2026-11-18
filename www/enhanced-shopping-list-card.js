@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.20.1
+ * Enhanced Shopping List Card v2.20.2
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -112,7 +112,7 @@ const STRINGS = {
     ed_done: "Gotowe",
     ed_new_category: "+ Nowa",
     step: "krok",
-    ed_add_top: "Pole dodawania zawsze nad listą (domyślnie na telefonie jest na dole)",
+    ed_add_top: "Pole dodawania przyklejone na dole ekranu na telefonie (domyślnie jest nad listą)",
     copy_list: "Kopiuj listę",
     copied: "Skopiowano!",
     share_list: "Udostępnij listę",
@@ -190,7 +190,7 @@ const STRINGS = {
     ed_done: "Done",
     ed_new_category: "+ New",
     step: "step",
-    ed_add_top: "Always keep the add field above the list (on phones it is at the bottom by default)",
+    ed_add_top: "Dock the add field to the bottom of the screen on phones (by default it is above the list)",
     copy_list: "Copy list",
     copied: "Copied!",
     share_list: "Share list",
@@ -529,7 +529,7 @@ class EnhancedShoppingListCard extends HTMLElement {
         }
         ${EnhancedShoppingListCard.CSS}
       </style>
-      <ha-card class="${(sizeClass + (this._config.add_position === "top" ? " add-top" : "")).trim()}">
+      <ha-card class="${(sizeClass + (this._config.add_position === "bottom" ? "" : " add-top")).trim()}">
         <div class="esl-w"><div class="esl-in">
         <div class="header">
           <div class="header-main">
@@ -2614,7 +2614,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
             <span class="check-label">${this._t("ed_show_notes")}</span>
           </div>
           <div class="check-row" id="esl-chk-addtop-row">
-            <input type="checkbox" id="esl-chk-addtop" ${this._config.add_position === "top" ? "checked" : ""} />
+            <input type="checkbox" id="esl-chk-addtop" ${this._config.add_position === "bottom" ? "checked" : ""} />
             <span class="check-label">${this._t("ed_add_top")}</span>
           </div>
         </div>
@@ -2697,7 +2697,7 @@ class EnhancedShoppingListCardEditor extends HTMLElement {
     // Make entire row clickable
     this.querySelector("#esl-chk-addtop").addEventListener("change", e => {
       const c = { ...this._config };
-      if (e.target.checked) c.add_position = "top"; else delete c.add_position;
+      if (e.target.checked) c.add_position = "bottom"; else delete c.add_position;
       this._config = c; this._fire();
     });
     ["esl-chk-cat-row", "esl-chk-badge-row", "esl-chk-headers-row", "esl-chk-notes-row", "esl-chk-addtop-row"].forEach(rowId => {
@@ -2914,7 +2914,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.20.1 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.20.2 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
