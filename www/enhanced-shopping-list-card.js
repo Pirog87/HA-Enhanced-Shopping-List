@@ -1,5 +1,5 @@
 /**
- * Enhanced Shopping List Card v2.20.0
+ * Enhanced Shopping List Card v2.20.1
  * Works with any todo.* entity (native HA shopping list)
  * Summary encoding: "Name (qty) [Category] // note"
  */
@@ -901,7 +901,6 @@ class EnhancedShoppingListCard extends HTMLElement {
       </div>`;
     } else {
       let lastCat = null;
-      const checkColor = this._config.check_color || "var(--primary-color)";
       for (const item of active) {
         const cat = item.category || "";
         if (hasAnyCat && showHeaders && cat !== lastCat) {
@@ -917,9 +916,9 @@ class EnhancedShoppingListCard extends HTMLElement {
             <div class="store-sw-threshold" style="left:${parseInt(this._config.swipe_threshold) || 50}%"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M5 13l4 4L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
           </div>
           <div class="store-item" data-uid="${item.uid}">
-            <span class="store-check"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M5 13l4 4L19 7" fill="none" stroke="${checkColor}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span class="store-body"><span class="store-name">${esc(item.name)}</span>${(catBadge || note) ? `<span class="item-sub">${catBadge}${note}</span>` : ""}</span>
             <span class="qty-pill${one ? " one" : ""}">${item.quantity} ${esc(item.unit || this._t("pcs"))}</span>
+            <button class="chk" title="${this._t("bought")}" aria-label="${this._t("bought")}: ${esc(item.name).replace(/"/g, "&quot;")}"><span class="chk-ring"></span></button>
           </div>
         </div>`;
       }
@@ -977,11 +976,21 @@ class EnhancedShoppingListCard extends HTMLElement {
     overlay.querySelectorAll(".store-item").forEach(el => {
       const wrap = el.closest(".store-item-wrap");
       const fill = wrap.querySelector(".store-sw-fill");
-      let ts = null, off = 0;
+      let ts = null, off = 0, swiped = false, busy = false;
+      // Only the ring reacts to a tap; the rest of the tile needs a swipe
+      el.querySelector(".chk").addEventListener("click", e => {
+        e.stopPropagation();
+        if (swiped || busy) { swiped = false; return; }
+        const item = this._items.find(i => i.uid === el.dataset.uid);
+        if (!item) return;
+        busy = true;
+        try { navigator.vibrate(50); } catch(_) {}
+        this._storeCompleteItem(item);
+      });
       el.addEventListener("pointerdown", e => {
         if (e.button !== 0) return;
         ts = { x: e.clientX, y: e.clientY, dir: null, id: e.pointerId };
-        off = 0;
+        off = 0; swiped = false;
         wrap.classList.add("store-swiping");
       });
       el.addEventListener("pointermove", e => {
@@ -991,6 +1000,7 @@ class EnhancedShoppingListCard extends HTMLElement {
           if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
             ts.dir = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
             if (ts.dir === "h") {
+              swiped = true;
               try { el.setPointerCapture(e.pointerId); } catch(_) {}
             } else { ts = null; wrap.classList.remove("store-swiping"); return; }
           } else return;
@@ -1022,7 +1032,8 @@ class EnhancedShoppingListCard extends HTMLElement {
           fill.style.transition = "width 0.3s ease";
           fill.style.width = "100%";
           const item = this._items.find(i => i.uid === el.dataset.uid);
-          if (item) {
+          if (item && !busy) {
+            busy = true;
             // Haptic feedback
             try { navigator.vibrate(50); } catch(_) {}
             this._storeCompleteItem(item);
@@ -2276,7 +2287,7 @@ class EnhancedShoppingListCard extends HTMLElement {
       .store-item {
         position: relative;
         display: flex; align-items: center; gap: 12px;
-        padding: 8px 14px 8px 12px; border-radius: var(--T);
+        padding: 8px 4px 8px 16px; border-radius: var(--T);
         background-color: var(--esl-active-bg);
         cursor: pointer; transition: all .3s ease;
         min-height: 64px; box-sizing: border-box;
@@ -2284,7 +2295,8 @@ class EnhancedShoppingListCard extends HTMLElement {
         touch-action: pan-y; -webkit-tap-highlight-color: transparent;
       }
       .store-swiping .store-item { background-image: linear-gradient(var(--esl-active-bg), var(--esl-active-bg)), linear-gradient(var(--esl-card), var(--esl-card)); }
-      .store-check { flex-shrink: 0; display: flex; }
+      .store-item .chk { width: 52px; height: 52px; }
+      .store-item .chk-ring { width: 36px; height: 36px; }
       .store-body { flex: 1; min-width: 0; display: block; }
       .store-name {
         display: block; font-size: 22px; font-weight: 800; letter-spacing: -.01em; line-height: 1.25;
@@ -2292,17 +2304,19 @@ class EnhancedShoppingListCard extends HTMLElement {
       }
       .store-item .qty-pill { display: grid; height: 36px; font-size: 16px; border-radius: 18px; }
       .store-item .note-preview { font-size: 15px; }
-      .store-sz-compact .store-item { min-height: 48px; padding: 4px 12px 4px 10px; gap: 10px; }
+      .store-sz-compact .store-item { min-height: 48px; padding: 4px 2px 4px 14px; gap: 10px; }
       .store-sz-compact .store-item-wrap { margin-bottom: 4px; }
       .store-sz-compact .store-name { font-size: 18px; }
-      .store-sz-compact .store-check svg { width: 22px; height: 22px; }
+      .store-sz-compact .store-item .chk { width: 46px; height: 46px; }
+      .store-sz-compact .store-item .chk-ring { width: 30px; height: 30px; }
       .store-sz-compact .store-item .qty-pill { height: 30px; font-size: 14px; }
       .store-sz-compact .store-item .note-preview { font-size: 13px; }
       .store-sz-compact .cat-header { padding: 8px 6px 4px; }
-      .store-sz-comfortable .store-item { min-height: 78px; padding: 12px 16px 12px 14px; }
+      .store-sz-comfortable .store-item { min-height: 78px; padding: 12px 6px 12px 18px; }
       .store-sz-comfortable .store-item-wrap { margin-bottom: 8px; }
       .store-sz-comfortable .store-name { font-size: 25px; }
-      .store-sz-comfortable .store-check svg { width: 32px; height: 32px; }
+      .store-sz-comfortable .store-item .chk { width: 58px; height: 58px; }
+      .store-sz-comfortable .store-item .chk-ring { width: 42px; height: 42px; }
       .store-sz-comfortable .store-item .qty-pill { height: 40px; font-size: 18px; border-radius: 20px; }
       .store-sz-comfortable .cat-header { padding: 14px 6px 8px; font-size: 14px; }
       .store-done {
@@ -2900,7 +2914,7 @@ window.customCards.push({
 });
 
 console.info(
-  "%c ENHANCED-SHOPPING-LIST %c v2.20.0 ",
+  "%c ENHANCED-SHOPPING-LIST %c v2.20.1 ",
   "background:#43a047;color:#fff;font-weight:bold;border-radius:4px 0 0 4px;",
   "background:#333;color:#fff;border-radius:0 4px 4px 0;"
 );
